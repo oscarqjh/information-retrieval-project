@@ -67,7 +67,7 @@ class BlueskyScraper(BaseScraper):
         return opinions[:max_results]
 
     def _post_to_opinion(self, post, query: str) -> Opinion:
-        return Opinion(
+        opinion = Opinion(
             platform="bluesky",
             post_id=self._extract_post_id(post.uri),
             author=post.author.handle,
@@ -79,6 +79,10 @@ class BlueskyScraper(BaseScraper):
             likes=getattr(post, "like_count", 0) or 0,
             reposts=getattr(post, "repost_count", 0) or 0,
         )
+        # Transient attributes for reply fetching (not persisted to DB)
+        opinion._original_uri = post.uri
+        opinion._reply_count = getattr(post, "reply_count", 0) or 0
+        return opinion
 
     async def scrape_replies(
         self, post_uri: str, parent_post_id: str, query: str,

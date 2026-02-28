@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from atproto import Client
 from atproto_client.request import Request
 
+from opinion_scraper.filter import RuleFilter
 from opinion_scraper.scraper.base import BaseScraper
 from opinion_scraper.storage import Opinion
 
@@ -27,7 +28,7 @@ class BlueskyScraper(BaseScraper):
             self._client.login(self._handle, self._password)
             self._logged_in = True
 
-    async def scrape(self, query: str, max_results: int = 100, on_progress=None) -> list[Opinion]:
+    async def scrape(self, query: str, max_results: int = 100, on_progress=None, rule_filter: RuleFilter | None = None) -> list[Opinion]:
         """Scrape Bluesky posts matching the query."""
         self._ensure_login()
         opinions = []
@@ -48,6 +49,12 @@ class BlueskyScraper(BaseScraper):
 
             batch_count = 0
             for post in response.posts:
+                if rule_filter:
+                    lang = None
+                    if hasattr(post.record, "langs") and post.record.langs:
+                        lang = post.record.langs[0]
+                    if not rule_filter.is_acceptable(post.record.text, lang=lang):
+                        continue
                 opinions.append(self._post_to_opinion(post, query))
                 batch_count += 1
             if on_progress and batch_count:

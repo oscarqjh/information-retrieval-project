@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from opinion_scraper.filter import RuleFilter
 from opinion_scraper.scraper.bluesky import BlueskyScraper
 from opinion_scraper.storage import Opinion
 
@@ -19,6 +20,7 @@ def mock_post():
     post.record = MagicMock()
     post.record.text = "AI tools are genuinely helpful for coding"
     post.record.created_at = "2026-02-01T10:30:00.000Z"
+    post.record.langs = ["en"]
     post.like_count = 8
     post.repost_count = 2
     return post
@@ -55,3 +57,41 @@ async def test_scrape_converts_posts_to_opinions(scraper, mock_post):
 def test_extract_post_id():
     uri = "at://did:plc:abc123/app.bsky.feed.post/xyz789"
     assert BlueskyScraper._extract_post_id(uri) == "bsky_xyz789"
+
+
+@pytest.mark.asyncio
+async def test_scrape_filters_spam_posts(scraper):
+    good_post = MagicMock()
+    good_post.uri = "at://did:plc:abc123/app.bsky.feed.post/good1"
+    good_post.author = MagicMock()
+    good_post.author.handle = "legit.bsky.social"
+    good_post.record = MagicMock()
+    good_post.record.text = "I genuinely think AI tools are helpful for coding"
+    good_post.record.created_at = "2026-02-01T10:30:00.000Z"
+    good_post.record.langs = ["en"]
+    good_post.like_count = 5
+    good_post.repost_count = 1
+
+    spam_post = MagicMock()
+    spam_post.uri = "at://did:plc:abc123/app.bsky.feed.post/spam1"
+    spam_post.author = MagicMock()
+    spam_post.author.handle = "spammer.bsky.social"
+    spam_post.record = MagicMock()
+    spam_post.record.text = "lol"
+    spam_post.record.created_at = "2026-02-01T11:00:00.000Z"
+    spam_post.record.langs = ["en"]
+    spam_post.like_count = 0
+    spam_post.repost_count = 0
+
+    mock_response = MagicMock()
+    mock_response.posts = [good_post, spam_post]
+    mock_response.cursor = None
+
+    rule_filter = RuleFilter()
+    with patch.object(scraper, "_client") as mock_client:
+        mock_client.app = MagicMock()
+        mock_client.app.bsky.feed.search_posts.return_value = mock_response
+        results = await scraper.scrape("AI tools", max_results=10, rule_filter=rule_filter)
+
+    assert len(results) == 1
+    assert results[0].author == "legit.bsky.social"

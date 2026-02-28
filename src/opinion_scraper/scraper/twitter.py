@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from twscrape import API
 
+from opinion_scraper.filter import RuleFilter
 from opinion_scraper.scraper.base import BaseScraper
 from opinion_scraper.storage import Opinion
 
@@ -23,13 +24,17 @@ class TwitterScraper(BaseScraper):
         await self._api.pool.add_account(username, password, email, email_password)
         await self._api.pool.login_all()
 
-    async def scrape(self, query: str, max_results: int = 100, on_progress=None) -> list[Opinion]:
+    async def scrape(self, query: str, max_results: int = 100, on_progress=None, rule_filter: RuleFilter | None = None) -> list[Opinion]:
         """Scrape tweets matching the query."""
         opinions = []
         count = 0
         async for tweet in self._api.search(query, limit=max_results):
             if count >= max_results:
                 break
+            if rule_filter:
+                lang = getattr(tweet, "lang", None)
+                if not rule_filter.is_acceptable(tweet.rawContent, lang=lang):
+                    continue
             opinions.append(self._tweet_to_opinion(tweet, query))
             count += 1
             if on_progress:

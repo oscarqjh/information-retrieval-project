@@ -5,6 +5,7 @@ import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from opinion_scraper.filter import RuleFilter
 from opinion_scraper.storage import Opinion
 
 ProgressCallback = Callable[[int], None]  # called with number of new items
@@ -21,6 +22,7 @@ class BaseScraper(ABC):
     @abstractmethod
     async def scrape(
         self, query: str, max_results: int = 100, on_progress: ProgressCallback | None = None,
+        rule_filter: RuleFilter | None = None,
     ) -> list[Opinion]:
         """Scrape posts matching the query.
 

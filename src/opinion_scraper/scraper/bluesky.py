@@ -1,0 +1,70 @@
+"""Bluesky scraper using the AT Protocol SDK."""
+
+from datetime import datetime, timezone
+
+from atproto import Client
+
+from opinion_scraper.scraper.base import BaseScraper
+from opinion_scraper.storage import Opinion
+
+
+class BlueskyScraper(BaseScraper):
+    """Scrapes Bluesky using the AT Protocol API."""
+
+    def __init__(self, handle: str, password: str):
+        self._handle = handle
+        self._password = password
+        self._client = Client()
+        self._logged_in = False
+
+    @property
+    def platform_name(self) -> str:
+        return "bluesky"
+
+    def _ensure_login(self):
+        if not self._logged_in:
+            self._client.login(self._handle, self._password)
+            self._logged_in = True
+
+    async def scrape(self, query: str, max_results: int = 100) -> list[Opinion]:
+        """Scrape Bluesky posts matching the query."""
+        self._ensure_login()
+        opinions = []
+        cursor = None
+
+        while len(opinions) < max_results:
+            limit = min(25, max_results - len(opinions))
+            params = {"q": query, "limit": limit}
+            if cursor:
+                params["cursor"] = cursor
+
+            response = self._client.app.bsky.feed.search_posts(params)
+
+            for post in response.posts:
+                opinions.append(self._post_to_opinion(post, query))
+
+            cursor = response.cursor
+            if not cursor or not response.posts:
+                break
+
+        return opinions[:max_results]
+
+    def _post_to_opinion(self, post, query: str) -> Opinion:
+        return Opinion(
+            platform="bluesky",
+            post_id=self._extract_post_id(post.uri),
+            author=post.author.handle,
+            text=post.record.text,
+            created_at=datetime.fromisoformat(
+                post.record.created_at.replace("Z", "+00:00")
+            ),
+            query=query,
+            likes=getattr(post, "like_count", 0) or 0,
+            reposts=getattr(post, "repost_count", 0) or 0,
+        )
+
+    @staticmethod
+    def _extract_post_id(uri: str) -> str:
+        """Extract a unique post ID from an AT Protocol URI."""
+        rkey = uri.split("/")[-1]
+        return f"bsky_{rkey}"

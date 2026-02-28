@@ -43,6 +43,24 @@ class TwitterScraper(BaseScraper):
                 await self._random_delay()
         return opinions
 
+    async def scrape_replies(
+        self, tweet_id: int, query: str, max_replies: int = 50,
+        rule_filter: RuleFilter | None = None,
+    ) -> list[Opinion]:
+        """Fetch replies to a tweet using conversation_id search."""
+        replies = []
+        search_query = f"conversation_id:{tweet_id} is:reply"
+        async for tweet in self._api.search(search_query, limit=max_replies):
+            if rule_filter:
+                lang = getattr(tweet, "lang", None)
+                if not rule_filter.is_acceptable(tweet.rawContent, lang=lang):
+                    continue
+            opinion = self._tweet_to_opinion(tweet, query)
+            opinion.is_reply = True
+            opinion.parent_post_id = str(tweet_id)
+            replies.append(opinion)
+        return replies
+
     @staticmethod
     def _tweet_to_opinion(tweet, query: str) -> Opinion:
         return Opinion(

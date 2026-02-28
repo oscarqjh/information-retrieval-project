@@ -106,6 +106,50 @@ async def test_scrape_filters_spam_tweets(scraper):
     assert results[0].author == "legit_user"
 
 
+@pytest.mark.asyncio
+async def test_scrape_replies_uses_conversation_id(scraper):
+    """Test that scrape_replies searches by conversation_id."""
+    reply1 = MagicMock()
+    reply1.id = 999001
+    reply1.user = MagicMock()
+    reply1.user.username = "replier1"
+    reply1.rawContent = "Great take on AI tools, I totally agree with this"
+    reply1.date = datetime(2026, 2, 1, 11, 0, 0, tzinfo=timezone.utc)
+    reply1.likeCount = 3
+    reply1.retweetCount = 0
+    reply1.lang = "en"
+    reply1.inReplyToTweetId = 123456789
+
+    reply2 = MagicMock()
+    reply2.id = 999002
+    reply2.user = MagicMock()
+    reply2.user.username = "replier2"
+    reply2.rawContent = "I disagree, AI tools are overhyped in my opinion"
+    reply2.date = datetime(2026, 2, 1, 12, 0, 0, tzinfo=timezone.utc)
+    reply2.likeCount = 1
+    reply2.retweetCount = 0
+    reply2.lang = "en"
+    reply2.inReplyToTweetId = 123456789
+
+    with patch.object(scraper, "_api") as mock_api:
+        mock_api.search.return_value = AsyncIteratorMock([reply1, reply2])
+        replies = await scraper.scrape_replies(
+            tweet_id=123456789,
+            query="AI tools",
+            max_replies=50,
+        )
+
+    # Verify correct search query was used
+    mock_api.search.assert_called_once_with(
+        "conversation_id:123456789 is:reply", limit=50,
+    )
+    assert len(replies) == 2
+    assert all(r.is_reply for r in replies)
+    assert all(r.parent_post_id == "123456789" for r in replies)
+    assert replies[0].author == "replier1"
+    assert replies[1].author == "replier2"
+
+
 class AsyncIteratorMock:
     """Helper to mock async iterators."""
 

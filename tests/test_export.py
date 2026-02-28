@@ -97,3 +97,29 @@ def test_to_json_empty(exporter, tmp_path):
         data = json.load(f)
 
     assert data == []
+
+
+def test_to_csv_includes_reply_and_relevance_fields(exporter, tmp_path):
+    opinions = [
+        Opinion(
+            platform="bluesky", post_id="bsky_r1", author="alice.bsky.social",
+            text="Great point about AI tools",
+            created_at=datetime(2026, 1, 20, 8, 0, 0, tzinfo=timezone.utc),
+            query="AI tools", likes=5, reposts=1,
+            sentiment_score=0.8, sentiment_label="positive",
+            is_reply=True, parent_post_id="bsky_xyz789",
+            relevance_score=0.95, relevance_label="relevant",
+        ),
+    ]
+    path = str(tmp_path / "reply_export.csv")
+    exporter.to_csv(opinions, path)
+
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    assert len(rows) == 1
+    assert rows[0]["is_reply"] == "True"
+    assert rows[0]["parent_post_id"] == "bsky_xyz789"
+    assert rows[0]["relevance_score"] == "0.95"
+    assert rows[0]["relevance_label"] == "relevant"

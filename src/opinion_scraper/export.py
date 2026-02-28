@@ -8,6 +8,7 @@ from opinion_scraper.storage import Opinion
 FIELDS = [
     "platform", "post_id", "author", "text", "created_at",
     "query", "likes", "reposts", "sentiment_score", "sentiment_label",
+    "is_reply", "parent_post_id", "relevance_score", "relevance_label",
 ]
 
 
@@ -41,4 +42,8 @@ class OpinionExporter:
             "reposts": opinion.reposts,
             "sentiment_score": opinion.sentiment_score,
             "sentiment_label": opinion.sentiment_label,
+            "is_reply": opinion.is_reply,
+            "parent_post_id": opinion.parent_post_id,
+            "relevance_score": opinion.relevance_score,
+            "relevance_label": opinion.relevance_label,
         }

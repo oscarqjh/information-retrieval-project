@@ -93,3 +93,59 @@ def test_count_by_platform(store):
     counts = store.count_by_platform()
     assert counts["twitter"] == 3
     assert counts["bluesky"] == 2
+
+
+def test_save_reply_opinion(store):
+    reply = Opinion(
+        platform="bluesky",
+        post_id="bsky_reply_1",
+        author="replier.bsky.social",
+        text="I totally agree with this take on AI tools",
+        created_at=datetime(2026, 1, 20, tzinfo=timezone.utc),
+        query="AI tools",
+        is_reply=True,
+        parent_post_id="bsky_xyz789",
+    )
+    store.save(reply)
+    results = store.get_all()
+    assert len(results) == 1
+    assert results[0].is_reply is True
+    assert results[0].parent_post_id == "bsky_xyz789"
+
+
+def test_save_opinion_with_relevance(store):
+    opinion = Opinion(
+        platform="twitter",
+        post_id="tw_rel_1",
+        author="user1",
+        text="AI tools are great",
+        created_at=datetime(2026, 1, 20, tzinfo=timezone.utc),
+        query="AI tools",
+    )
+    store.save(opinion)
+    store.update_relevance("tw_rel_1", 0.92, "relevant")
+    results = store.get_all()
+    assert results[0].relevance_score == 0.92
+    assert results[0].relevance_label == "relevant"
+
+
+def test_get_unfiltered(store):
+    for i in range(3):
+        store.save(Opinion(
+            platform="twitter", post_id=f"uf_{i}", author="u",
+            text="text about AI", created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            query="q",
+        ))
+    store.update_relevance("uf_0", 0.95, "relevant")
+    unfiltered = store.get_unfiltered()
+    assert len(unfiltered) == 2
+    assert all(o.relevance_label is None for o in unfiltered)
+
+
+def test_default_reply_fields(store, sample_opinion):
+    store.save(sample_opinion)
+    results = store.get_all()
+    assert results[0].is_reply is False
+    assert results[0].parent_post_id is None
+    assert results[0].relevance_score is None
+    assert results[0].relevance_label is None

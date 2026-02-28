@@ -19,6 +19,10 @@ class Opinion:
     reposts: int = 0
     sentiment_score: float | None = None
     sentiment_label: str | None = None
+    is_reply: bool = False
+    parent_post_id: str | None = None
+    relevance_score: float | None = None
+    relevance_label: str | None = None
 
 
 class OpinionStore:
@@ -41,7 +45,11 @@ class OpinionStore:
                     likes INTEGER DEFAULT 0,
                     reposts INTEGER DEFAULT 0,
                     sentiment_score REAL,
-                    sentiment_label TEXT
+                    sentiment_label TEXT,
+                    is_reply INTEGER DEFAULT 0,
+                    parent_post_id TEXT,
+                    relevance_score REAL,
+                    relevance_label TEXT
                 )
             """)
 
@@ -49,22 +57,24 @@ class OpinionStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO opinions
-                   (platform, post_id, author, text, created_at, query, likes, reposts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (platform, post_id, author, text, created_at, query, likes, reposts, is_reply, parent_post_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (opinion.platform, opinion.post_id, opinion.author, opinion.text,
                  opinion.created_at.isoformat(), opinion.query,
-                 opinion.likes, opinion.reposts),
+                 opinion.likes, opinion.reposts,
+                 int(opinion.is_reply), opinion.parent_post_id),
             )
 
     def save_batch(self, opinions: list[Opinion]):
         with sqlite3.connect(self.db_path) as conn:
             conn.executemany(
                 """INSERT OR IGNORE INTO opinions
-                   (platform, post_id, author, text, created_at, query, likes, reposts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (platform, post_id, author, text, created_at, query, likes, reposts, is_reply, parent_post_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (o.platform, o.post_id, o.author, o.text,
-                     o.created_at.isoformat(), o.query, o.likes, o.reposts)
+                     o.created_at.isoformat(), o.query, o.likes, o.reposts,
+                     int(o.is_reply), o.parent_post_id)
                     for o in opinions
                 ],
             )
@@ -88,6 +98,20 @@ class OpinionStore:
                 (score, label, post_id),
             )
 
+    def update_relevance(self, post_id: str, score: float, label: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE opinions SET relevance_score = ?, relevance_label = ? WHERE post_id = ?",
+                (score, label, post_id),
+            )
+
+    def get_unfiltered(self) -> list[Opinion]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM opinions WHERE relevance_label IS NULL"
+            ).fetchall()
+        return [self._row_to_opinion(r) for r in rows]
+
     def count_by_platform(self) -> dict[str, int]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
@@ -108,4 +132,8 @@ class OpinionStore:
             reposts=row[7],
             sentiment_score=row[8],
             sentiment_label=row[9],
+            is_reply=bool(row[10]),
+            parent_post_id=row[11],
+            relevance_score=row[12],
+            relevance_label=row[13],
         )

@@ -57,13 +57,16 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
                     click.echo(f"  Fetching replies for {len(opinions)} tweets...")
                     reply_total = 0
                     for op in opinions:
-                        tweet_id = int(op.post_id)
-                        replies = await scraper.scrape_replies(
-                            tweet_id=tweet_id, query=q,
-                            rule_filter=rule_filter,
-                        )
-                        store.save_batch(replies)
-                        reply_total += len(replies)
+                        try:
+                            tweet_id = int(op.post_id)
+                            replies = await scraper.scrape_replies(
+                                tweet_id=tweet_id, query=q,
+                                rule_filter=rule_filter,
+                            )
+                            store.save_batch(replies)
+                            reply_total += len(replies)
+                        except Exception:
+                            pass  # Skip failed thread fetches
                         await scraper._random_delay()
                     click.echo(f"  Collected {reply_total} replies")
                     total += reply_total
@@ -87,15 +90,18 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
                     for op in opinions:
                         if min_replies > 0 and getattr(op, '_reply_count', 0) < min_replies:
                             continue
-                        replies = await scraper.scrape_replies(
-                            post_uri=op._original_uri,
-                            parent_post_id=op.post_id,
-                            query=q,
-                            depth=reply_depth,
-                            rule_filter=rule_filter,
-                        )
-                        store.save_batch(replies)
-                        reply_total += len(replies)
+                        try:
+                            replies = await scraper.scrape_replies(
+                                post_uri=op._original_uri,
+                                parent_post_id=op.post_id,
+                                query=q,
+                                depth=reply_depth,
+                                rule_filter=rule_filter,
+                            )
+                            store.save_batch(replies)
+                            reply_total += len(replies)
+                        except Exception:
+                            pass  # Skip failed thread fetches
                         await scraper._random_delay()
                     click.echo(f"  Collected {reply_total} replies")
                     total += reply_total
@@ -153,7 +159,8 @@ def filter_cmd(ctx, threshold, model, batch_size):
             batch_opinions = unfiltered[i:i + batch_size]
             results = classifier.classify_batch(batch_texts)
             for opinion, (score, label) in zip(batch_opinions, results):
-                store.update_relevance(opinion.post_id, score, label)
+                if score >= threshold:
+                    store.update_relevance(opinion.post_id, score, label)
 
     # Summary
     all_opinions = store.get_all()

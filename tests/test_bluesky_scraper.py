@@ -95,3 +95,86 @@ async def test_scrape_filters_spam_posts(scraper):
 
     assert len(results) == 1
     assert results[0].author == "legit.bsky.social"
+
+
+@pytest.mark.asyncio
+async def test_scrape_replies_traverses_thread(scraper):
+    """Test that scrape_replies recursively extracts replies from a thread."""
+    # Build a mock thread: root -> reply1 -> nested_reply
+    nested_reply = MagicMock()
+    nested_reply.post = MagicMock()
+    nested_reply.post.uri = "at://did:plc:abc123/app.bsky.feed.post/nested1"
+    nested_reply.post.author = MagicMock()
+    nested_reply.post.author.handle = "nested.bsky.social"
+    nested_reply.post.record = MagicMock()
+    nested_reply.post.record.text = "Great follow-up point about AI tools"
+    nested_reply.post.record.created_at = "2026-02-01T12:00:00.000Z"
+    nested_reply.post.record.langs = ["en"]
+    nested_reply.post.like_count = 2
+    nested_reply.post.repost_count = 0
+    nested_reply.replies = []
+    nested_reply.py_type = "app.bsky.feed.defs#threadViewPost"
+
+    reply1 = MagicMock()
+    reply1.post = MagicMock()
+    reply1.post.uri = "at://did:plc:abc123/app.bsky.feed.post/reply1"
+    reply1.post.author = MagicMock()
+    reply1.post.author.handle = "replier.bsky.social"
+    reply1.post.record = MagicMock()
+    reply1.post.record.text = "I agree, AI tools have been very useful"
+    reply1.post.record.created_at = "2026-02-01T11:00:00.000Z"
+    reply1.post.record.langs = ["en"]
+    reply1.post.like_count = 5
+    reply1.post.repost_count = 1
+    reply1.replies = [nested_reply]
+    reply1.py_type = "app.bsky.feed.defs#threadViewPost"
+
+    root_thread = MagicMock()
+    root_thread.thread = MagicMock()
+    root_thread.thread.replies = [reply1]
+    root_thread.thread.py_type = "app.bsky.feed.defs#threadViewPost"
+
+    with patch.object(scraper, "_client") as mock_client:
+        mock_client.app = MagicMock()
+        mock_client.app.bsky.feed.get_post_thread.return_value = root_thread
+        replies = await scraper.scrape_replies(
+            post_uri="at://did:plc:abc123/app.bsky.feed.post/root1",
+            parent_post_id="bsky_root1",
+            query="AI tools",
+            depth=6,
+        )
+
+    assert len(replies) == 2
+    assert all(r.is_reply for r in replies)
+    assert replies[0].parent_post_id == "bsky_root1"
+    assert replies[0].author == "replier.bsky.social"
+    assert replies[1].author == "nested.bsky.social"
+
+
+@pytest.mark.asyncio
+async def test_scrape_replies_skips_blocked_posts(scraper):
+    """Test that NotFoundPost and BlockedPost nodes are skipped."""
+    blocked = MagicMock()
+    blocked.py_type = "app.bsky.feed.defs#blockedPost"
+    blocked.replies = None
+
+    not_found = MagicMock()
+    not_found.py_type = "app.bsky.feed.defs#notFoundPost"
+    not_found.replies = None
+
+    root_thread = MagicMock()
+    root_thread.thread = MagicMock()
+    root_thread.thread.replies = [blocked, not_found]
+    root_thread.thread.py_type = "app.bsky.feed.defs#threadViewPost"
+
+    with patch.object(scraper, "_client") as mock_client:
+        mock_client.app = MagicMock()
+        mock_client.app.bsky.feed.get_post_thread.return_value = root_thread
+        replies = await scraper.scrape_replies(
+            post_uri="at://did:plc:abc123/app.bsky.feed.post/root2",
+            parent_post_id="bsky_root2",
+            query="AI tools",
+            depth=6,
+        )
+
+    assert len(replies) == 0

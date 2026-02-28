@@ -80,6 +80,55 @@ class BlueskyScraper(BaseScraper):
             reposts=getattr(post, "repost_count", 0) or 0,
         )
 
+    async def scrape_replies(
+        self, post_uri: str, parent_post_id: str, query: str,
+        depth: int = 6, rule_filter: RuleFilter | None = None,
+    ) -> list[Opinion]:
+        """Fetch reply thread for a post and return replies as Opinion objects."""
+        self._ensure_login()
+        response = self._client.app.bsky.feed.get_post_thread(
+            {"uri": post_uri, "depth": depth}
+        )
+        replies: list[Opinion] = []
+        self._traverse_replies(response.thread, parent_post_id, query, replies, rule_filter)
+        return replies
+
+    def _traverse_replies(
+        self, node, parent_post_id: str, query: str,
+        results: list[Opinion], rule_filter: RuleFilter | None = None,
+    ):
+        """Recursively extract replies from a ThreadViewPost tree."""
+        if not hasattr(node, "replies") or not node.replies:
+            return
+        for reply_node in node.replies:
+            if getattr(reply_node, "py_type", "") != "app.bsky.feed.defs#threadViewPost":
+                continue
+            post = reply_node.post
+            if rule_filter:
+                lang = None
+                if hasattr(post.record, "langs") and post.record.langs:
+                    lang = post.record.langs[0]
+                if not rule_filter.is_acceptable(post.record.text, lang=lang):
+                    continue
+            reply_opinion = Opinion(
+                platform="bluesky",
+                post_id=self._extract_post_id(post.uri),
+                author=post.author.handle,
+                text=post.record.text,
+                created_at=datetime.fromisoformat(
+                    post.record.created_at.replace("Z", "+00:00")
+                ),
+                query=query,
+                likes=getattr(post, "like_count", 0) or 0,
+                reposts=getattr(post, "repost_count", 0) or 0,
+                is_reply=True,
+                parent_post_id=parent_post_id,
+            )
+            results.append(reply_opinion)
+            # Recurse into nested replies
+            reply_id = self._extract_post_id(post.uri)
+            self._traverse_replies(reply_node, reply_id, query, results, rule_filter)
+
     @staticmethod
     def _extract_post_id(uri: str) -> str:
         """Extract a unique post ID from an AT Protocol URI."""

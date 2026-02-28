@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from atproto import Client
+from atproto_client.request import Request
 
 from opinion_scraper.scraper.base import BaseScraper
 from opinion_scraper.storage import Opinion
@@ -11,10 +12,10 @@ from opinion_scraper.storage import Opinion
 class BlueskyScraper(BaseScraper):
     """Scrapes Bluesky using the AT Protocol API."""
 
-    def __init__(self, handle: str, password: str):
+    def __init__(self, handle: str, password: str, timeout: int = 30):
         self._handle = handle
         self._password = password
-        self._client = Client()
+        self._client = Client(request=Request(timeout=timeout))
         self._logged_in = False
 
     @property
@@ -26,13 +27,18 @@ class BlueskyScraper(BaseScraper):
             self._client.login(self._handle, self._password)
             self._logged_in = True
 
-    async def scrape(self, query: str, max_results: int = 100) -> list[Opinion]:
+    async def scrape(self, query: str, max_results: int = 100, on_progress=None) -> list[Opinion]:
         """Scrape Bluesky posts matching the query."""
         self._ensure_login()
         opinions = []
         cursor = None
+        is_first_page = True
 
         while len(opinions) < max_results:
+            if not is_first_page:
+                await self._random_delay()
+            is_first_page = False
+
             limit = min(25, max_results - len(opinions))
             params = {"q": query, "limit": limit}
             if cursor:
@@ -40,8 +46,12 @@ class BlueskyScraper(BaseScraper):
 
             response = self._client.app.bsky.feed.search_posts(params)
 
+            batch_count = 0
             for post in response.posts:
                 opinions.append(self._post_to_opinion(post, query))
+                batch_count += 1
+            if on_progress and batch_count:
+                on_progress(batch_count)
 
             cursor = response.cursor
             if not cursor or not response.posts:

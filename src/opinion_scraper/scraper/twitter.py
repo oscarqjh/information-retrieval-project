@@ -23,7 +23,7 @@ class TwitterScraper(BaseScraper):
         await self._api.pool.add_account(username, password, email, email_password)
         await self._api.pool.login_all()
 
-    async def scrape(self, query: str, max_results: int = 100) -> list[Opinion]:
+    async def scrape(self, query: str, max_results: int = 100, on_progress=None) -> list[Opinion]:
         """Scrape tweets matching the query."""
         opinions = []
         count = 0
@@ -32,6 +32,10 @@ class TwitterScraper(BaseScraper):
                 break
             opinions.append(self._tweet_to_opinion(tweet, query))
             count += 1
+            if on_progress:
+                on_progress(1)
+            if count % 20 == 0:
+                await self._random_delay()
         return opinions
 
     @staticmethod

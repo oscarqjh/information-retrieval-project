@@ -23,5 +23,5 @@ class ScraperConfig:
                 '(ChatGPT OR Claude OR Gemini OR Copilot) (love OR hate OR amazing OR terrible) lang:en -is:retweet',
                 '"generative AI" (overrated OR underrated OR "game changer") lang:en -is:retweet',
             ],
-            max_results=200,
+            max_results=10000,
         )

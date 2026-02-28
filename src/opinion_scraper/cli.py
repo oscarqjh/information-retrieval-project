@@ -1,8 +1,12 @@
 """CLI entry point for the opinion scraper."""
 
 import asyncio
+import os
 
 import click
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from opinion_scraper.analysis import SentimentAnalyzer
 from opinion_scraper.config import ScraperConfig
@@ -36,20 +40,25 @@ def scrape(ctx, query, max_results, platform):
             click.echo("Scraping Twitter/X...")
             scraper = TwitterScraper()
             for q in config.search_queries:
-                opinions = await scraper.scrape(q, config.max_results)
+                with click.progressbar(length=config.max_results, label=f"  [{q}]") as bar:
+                    opinions = await scraper.scrape(
+                        q, config.max_results, on_progress=bar.update,
+                    )
                 store.save_batch(opinions)
                 total += len(opinions)
-                click.echo(f"  [{q}] collected {len(opinions)} tweets")
 
         if platform in ("bluesky", "all"):
-            handle = click.prompt("Bluesky handle")
-            password = click.prompt("Bluesky password", hide_input=True)
+            handle = os.environ.get("BSKY_HANDLE") or click.prompt("Bluesky handle")
+            password = os.environ.get("BSKY_PASSWORD") or click.prompt("Bluesky password", hide_input=True)
+            click.echo("Scraping Bluesky...")
             scraper = BlueskyScraper(handle=handle, password=password)
             for q in config.search_queries:
-                opinions = await scraper.scrape(q, config.max_results)
+                with click.progressbar(length=config.max_results, label=f"  [{q}]") as bar:
+                    opinions = await scraper.scrape(
+                        q, config.max_results, on_progress=bar.update,
+                    )
                 store.save_batch(opinions)
                 total += len(opinions)
-                click.echo(f"  [{q}] collected {len(opinions)} posts")
 
         click.echo(f"\nTotal: {total} opinions saved to {ctx.obj['db']}")
 
@@ -68,10 +77,10 @@ def analyze(ctx):
         click.echo("No unanalyzed opinions found.")
         return
 
-    click.echo(f"Analyzing {len(unanalyzed)} opinions...")
-    for opinion in unanalyzed:
-        analyzer.analyze(opinion)
-        store.update_sentiment(opinion.post_id, opinion.sentiment_score, opinion.sentiment_label)
+    with click.progressbar(unanalyzed, label="Analyzing opinions") as bar:
+        for opinion in bar:
+            analyzer.analyze(opinion)
+            store.update_sentiment(opinion.post_id, opinion.sentiment_score, opinion.sentiment_label)
 
     click.echo("Done. Run 'opinion-scraper report' to see results.")
 

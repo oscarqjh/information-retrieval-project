@@ -43,36 +43,48 @@ Twitter/X uses twscrape which manages its own account pool — see [twscrape doc
 
 ## Usage
 
-### Full Pipeline
+### Reproducing the Bluesky AI Opinions Experiment
 
 ```bash
-# 1. Scrape — collect opinions from social media
-uv run opinion-scraper scrape -q "ChatGPT" -n 100 -p bluesky
+# 1. Scrape Bluesky using preset queries with reply threads
+uv run opinion-scraper preset -p bluesky --with-replies
 
-# 2. Filter — ML relevance classification (GPU)
+# 2. Filter — ML relevance classification (zero-shot on GPU)
 uv run opinion-scraper filter
 
 # 3. Analyze — VADER sentiment scoring
 uv run opinion-scraper analyze
 
-# 4. Report — view results
+# 4. Report — view results (relevant posts only)
 uv run opinion-scraper report --relevant-only
 
-# 5. Export — save to file
+# 5. Export — Bluesky relevant opinions to CSV
+uv run opinion-scraper export -f csv -o bluesky_opinions.csv -p bluesky --relevant-only
+```
+
+### Custom Queries
+
+```bash
+# Scrape specific queries
+uv run opinion-scraper scrape -q "ChatGPT" -q "Claude AI" -n 100 -p bluesky --with-replies
+
+# Run the rest of the pipeline
+uv run opinion-scraper filter
+uv run opinion-scraper analyze
 uv run opinion-scraper export -f csv -o opinions.csv --relevant-only
 ```
 
 ### Using Preset Queries
 
-Run with curated AI tool opinion queries (14 queries per platform):
+Run with curated AI tool opinion queries (14 for Twitter, 40 for Bluesky):
 
 ```bash
 # All platforms
-uv run opinion-scraper preset
+uv run opinion-scraper preset --with-replies
 
 # Single platform
-uv run opinion-scraper preset -p bluesky
-uv run opinion-scraper preset -p twitter
+uv run opinion-scraper preset -p bluesky --with-replies
+uv run opinion-scraper preset -p twitter --with-replies
 ```
 
 ### CLI Reference
@@ -121,6 +133,7 @@ Export opinions to CSV or JSON.
 | `-f, --format` | (required) | `csv` or `json` |
 | `-o, --output` | (required) | Output file path |
 | `-s, --sentiment` | `all` | Filter: `all`, `positive`, `negative`, `neutral` |
+| `-p, --platform` | `all` | Filter: `all`, `twitter`, `bluesky` |
 | `--relevant-only` | `False` | Exclude spam/off-topic posts |
 
 #### `preset`
@@ -130,6 +143,9 @@ Scrape using curated AI opinion queries.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-p, --platform` | `all` | `twitter`, `bluesky`, or `all` |
+| `--with-replies` | `False` | Also scrape reply threads |
+| `--min-replies` | `0` | Min reply count to fetch thread |
+| `--reply-depth` | `6` | Max reply depth (Bluesky only) |
 
 ### Global Options
 

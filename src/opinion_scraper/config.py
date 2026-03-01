@@ -45,20 +45,52 @@ class ScraperConfig:
             ],
             # Bluesky search is keyword-only — no boolean operators, no lang:/is: filters
             bluesky_search_queries=[
+                # Broad AI tools mentions
                 "AI tools",
                 "AI assistants opinion",
+                "AI opinion",
+                # Named tools — chat & general
                 "ChatGPT",
                 "Claude AI",
                 "Gemini AI",
+                "Copilot AI",
+                "Perplexity AI",
+                "NotebookLM",
+                # Named tools — coding
                 "GitHub Copilot",
                 "Cursor AI",
+                "Codeium",
+                "Tabnine",
+                # Named tools — creative
                 "Midjourney",
                 "Stable Diffusion",
                 "DALL-E",
+                "Suno AI",
+                "Runway AI",
+                # Named tools — productivity
+                "Notion AI",
+                "Grammarly AI",
+                "Jasper AI",
+                # Use case opinions
                 "AI for coding",
+                "AI for writing",
+                "AI for research",
+                "AI in education",
+                "AI at work",
+                # Broader sentiment
                 "generative AI",
                 "AI replacing jobs",
+                "AI hype",
+                "AI bubble",
+                "AI overrated",
+                "AI game changer",
+                # Trust and ethics
                 "AI ethics",
+                "AI bias",
+                "trust AI",
+                # Productivity vs threat
+                "AI productivity",
+                "AI workflow",
             ],
-            max_results=1000,
+            max_results=2000,
         )

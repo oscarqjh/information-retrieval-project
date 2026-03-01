@@ -54,20 +54,20 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
                 store.save_batch(opinions)
                 total += len(opinions)
                 if with_replies:
-                    click.echo(f"  Fetching replies for {len(opinions)} tweets...")
                     reply_total = 0
-                    for op in opinions:
-                        try:
-                            tweet_id = int(op.post_id)
-                            replies = await scraper.scrape_replies(
-                                tweet_id=tweet_id, query=q,
-                                rule_filter=rule_filter,
-                            )
-                            store.save_batch(replies)
-                            reply_total += len(replies)
-                        except Exception:
-                            pass  # Skip failed thread fetches
-                        await scraper._random_delay()
+                    with click.progressbar(opinions, label=f"  Replies [{q}]") as bar:
+                        for op in bar:
+                            try:
+                                tweet_id = int(op.post_id)
+                                replies = await scraper.scrape_replies(
+                                    tweet_id=tweet_id, query=q,
+                                    rule_filter=rule_filter,
+                                )
+                                store.save_batch(replies)
+                                reply_total += len(replies)
+                            except Exception:
+                                pass  # Skip failed thread fetches
+                            await scraper._random_delay()
                     click.echo(f"  Collected {reply_total} replies")
                     total += reply_total
 
@@ -91,24 +91,24 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
                     store.save_batch(opinions)
                     total += len(opinions)
                     if with_replies:
-                        click.echo(f"  Fetching replies for {len(opinions)} posts...")
+                        reply_candidates = [op for op in opinions
+                                            if not (min_replies > 0 and getattr(op, '_reply_count', 0) < min_replies)]
                         reply_total = 0
-                        for op in opinions:
-                            if min_replies > 0 and getattr(op, '_reply_count', 0) < min_replies:
-                                continue
-                            try:
-                                replies = await scraper.scrape_replies(
-                                    post_uri=op._original_uri,
-                                    parent_post_id=op.post_id,
-                                    query=q,
-                                    depth=reply_depth,
-                                    rule_filter=rule_filter,
-                                )
-                                store.save_batch(replies)
-                                reply_total += len(replies)
-                            except Exception:
-                                pass  # Skip failed thread fetches
-                            await scraper._random_delay()
+                        with click.progressbar(reply_candidates, label=f"  Replies [{q}]") as bar:
+                            for op in bar:
+                                try:
+                                    replies = await scraper.scrape_replies(
+                                        post_uri=op._original_uri,
+                                        parent_post_id=op.post_id,
+                                        query=q,
+                                        depth=reply_depth,
+                                        rule_filter=rule_filter,
+                                    )
+                                    store.save_batch(replies)
+                                    reply_total += len(replies)
+                                except Exception:
+                                    pass  # Skip failed thread fetches
+                                await scraper._random_delay()
                         click.echo(f"  Collected {reply_total} replies")
                         total += reply_total
 
@@ -249,22 +249,27 @@ def export(ctx, format, output, sentiment, relevant_only):
 
 @main.command()
 @click.option("--platform", "-p", type=click.Choice(["twitter", "bluesky", "all"]), default="all")
+@click.option("--with-replies", is_flag=True, default=False, help="Also scrape reply threads.")
+@click.option("--min-replies", default=0, help="Min reply count to fetch thread (0 = all).")
+@click.option("--reply-depth", default=6, help="Max reply depth for Bluesky threads.")
 @click.pass_context
-def preset(ctx, platform):
+def preset(ctx, platform, with_replies, min_replies, reply_depth):
     """Scrape using the AI opinions preset queries."""
     config = ScraperConfig.ai_opinions_preset()
+    invoke_kwargs = dict(max_results=config.max_results, with_replies=with_replies,
+                         min_replies=min_replies, reply_depth=reply_depth)
 
     if platform == "all":
         click.echo(f"Using {len(config.search_queries)} preset queries for Twitter:")
         for q in config.search_queries:
             click.echo(f"  - {q}")
-        ctx.invoke(scrape, query=config.search_queries, max_results=config.max_results, platform="twitter")
+        ctx.invoke(scrape, query=config.search_queries, platform="twitter", **invoke_kwargs)
 
         bsky_queries = config.bluesky_search_queries or config.search_queries
         click.echo(f"\nUsing {len(bsky_queries)} preset queries for Bluesky:")
         for q in bsky_queries:
             click.echo(f"  - {q}")
-        ctx.invoke(scrape, query=bsky_queries, max_results=config.max_results, platform="bluesky")
+        ctx.invoke(scrape, query=bsky_queries, platform="bluesky", **invoke_kwargs)
     else:
         if platform == "bluesky" and config.bluesky_search_queries:
             queries = config.bluesky_search_queries
@@ -273,4 +278,4 @@ def preset(ctx, platform):
         click.echo(f"Using {len(queries)} preset queries:")
         for q in queries:
             click.echo(f"  - {q}")
-        ctx.invoke(scrape, query=queries, max_results=config.max_results, platform=platform)
+        ctx.invoke(scrape, query=queries, platform=platform, **invoke_kwargs)

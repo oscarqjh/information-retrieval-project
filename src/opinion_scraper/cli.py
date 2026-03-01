@@ -219,9 +219,10 @@ def report(ctx, relevant_only):
 @click.option("--format", "-f", type=click.Choice(["csv", "json"]), required=True, help="Export format.")
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output file path.")
 @click.option("--sentiment", "-s", type=click.Choice(["all", "positive", "negative", "neutral"]), default="all", help="Filter by sentiment.")
+@click.option("--platform", "-p", type=click.Choice(["all", "twitter", "bluesky"]), default="all", help="Filter by platform.")
 @click.option("--relevant-only", is_flag=True, default=False, help="Exclude spam/off-topic posts.")
 @click.pass_context
-def export(ctx, format, output, sentiment, relevant_only):
+def export(ctx, format, output, sentiment, platform, relevant_only):
     """Export opinions to CSV or JSON."""
     from opinion_scraper.export import OpinionExporter
 
@@ -231,6 +232,9 @@ def export(ctx, format, output, sentiment, relevant_only):
     if not all_opinions:
         click.echo("No data. Run 'opinion-scraper scrape' first.")
         return
+
+    if platform != "all":
+        all_opinions = [o for o in all_opinions if o.platform == platform]
 
     if sentiment != "all":
         all_opinions = [o for o in all_opinions if o.sentiment_label == sentiment]

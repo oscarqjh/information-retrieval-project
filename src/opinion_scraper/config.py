@@ -8,6 +8,7 @@ class ScraperConfig:
     """Configuration for scraping parameters."""
 
     search_queries: list[str] = field(default_factory=lambda: ["AI tools"])
+    bluesky_search_queries: list[str] = field(default_factory=list)
     max_results: int = 100
     language: str = "en"
     db_path: str = "opinions.db"
@@ -41,6 +42,23 @@ class ScraperConfig:
                 '("trust AI" OR "don\'t trust AI" OR "AI bias" OR "AI ethics") (opinion OR think OR feel) lang:en -is:retweet',
                 # Productivity vs threat
                 '("AI productivity" OR "AI workflow") (increased OR decreased OR "waste of time" OR "game changer") lang:en -is:retweet',
+            ],
+            # Bluesky search is keyword-only — no boolean operators, no lang:/is: filters
+            bluesky_search_queries=[
+                "AI tools",
+                "AI assistants opinion",
+                "ChatGPT",
+                "Claude AI",
+                "Gemini AI",
+                "GitHub Copilot",
+                "Cursor AI",
+                "Midjourney",
+                "Stable Diffusion",
+                "DALL-E",
+                "AI for coding",
+                "generative AI",
+                "AI replacing jobs",
+                "AI ethics",
             ],
             max_results=1000,
         )

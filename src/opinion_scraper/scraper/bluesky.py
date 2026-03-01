@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from atproto import Client
+from atproto_client.exceptions import ModelError
 from atproto_client.request import Request
 
 from opinion_scraper.filter import RuleFilter
@@ -45,7 +46,13 @@ class BlueskyScraper(BaseScraper):
             if cursor:
                 params["cursor"] = cursor
 
-            response = self._client.app.bsky.feed.search_posts(params)
+            try:
+                response = self._client.app.bsky.feed.search_posts(params)
+            except ModelError:
+                # Upstream SDK bug: some posts have embed metadata that
+                # fails Pydantic validation (e.g. aspectRatio.$type mismatch).
+                # Skip this page and stop pagination for this query.
+                break
 
             batch_count = 0
             for post in response.posts:
@@ -90,9 +97,12 @@ class BlueskyScraper(BaseScraper):
     ) -> list[Opinion]:
         """Fetch reply thread for a post and return replies as Opinion objects."""
         self._ensure_login()
-        response = self._client.app.bsky.feed.get_post_thread(
-            {"uri": post_uri, "depth": depth}
-        )
+        try:
+            response = self._client.app.bsky.feed.get_post_thread(
+                {"uri": post_uri, "depth": depth}
+            )
+        except ModelError:
+            return []
         replies: list[Opinion] = []
         self._traverse_replies(response.thread, parent_post_id, query, replies, rule_filter)
         return replies

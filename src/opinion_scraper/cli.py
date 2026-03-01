@@ -76,35 +76,41 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
             password = os.environ.get("BSKY_PASSWORD") or click.prompt("Bluesky password", hide_input=True)
             click.echo("Scraping Bluesky...")
             scraper = BlueskyScraper(handle=handle, password=password)
-            for q in config.search_queries:
-                with click.progressbar(length=config.max_results, label=f"  [{q}]") as bar:
-                    opinions = await scraper.scrape(
-                        q, config.max_results, on_progress=bar.update,
-                        rule_filter=rule_filter,
-                    )
-                store.save_batch(opinions)
-                total += len(opinions)
-                if with_replies:
-                    click.echo(f"  Fetching replies for {len(opinions)} posts...")
-                    reply_total = 0
-                    for op in opinions:
-                        if min_replies > 0 and getattr(op, '_reply_count', 0) < min_replies:
-                            continue
-                        try:
-                            replies = await scraper.scrape_replies(
-                                post_uri=op._original_uri,
-                                parent_post_id=op.post_id,
-                                query=q,
-                                depth=reply_depth,
-                                rule_filter=rule_filter,
-                            )
-                            store.save_batch(replies)
-                            reply_total += len(replies)
-                        except Exception:
-                            pass  # Skip failed thread fetches
-                        await scraper._random_delay()
-                    click.echo(f"  Collected {reply_total} replies")
-                    total += reply_total
+            try:
+                scraper._ensure_login()
+            except Exception as e:
+                click.echo(f"  Failed to connect to Bluesky: {e}", err=True)
+                scraper = None
+            if scraper is not None:
+                for q in config.search_queries:
+                    with click.progressbar(length=config.max_results, label=f"  [{q}]") as bar:
+                        opinions = await scraper.scrape(
+                            q, config.max_results, on_progress=bar.update,
+                            rule_filter=rule_filter,
+                        )
+                    store.save_batch(opinions)
+                    total += len(opinions)
+                    if with_replies:
+                        click.echo(f"  Fetching replies for {len(opinions)} posts...")
+                        reply_total = 0
+                        for op in opinions:
+                            if min_replies > 0 and getattr(op, '_reply_count', 0) < min_replies:
+                                continue
+                            try:
+                                replies = await scraper.scrape_replies(
+                                    post_uri=op._original_uri,
+                                    parent_post_id=op.post_id,
+                                    query=q,
+                                    depth=reply_depth,
+                                    rule_filter=rule_filter,
+                                )
+                                store.save_batch(replies)
+                                reply_total += len(replies)
+                            except Exception:
+                                pass  # Skip failed thread fetches
+                            await scraper._random_delay()
+                        click.echo(f"  Collected {reply_total} replies")
+                        total += reply_total
 
         click.echo(f"\nTotal: {total} opinions saved to {ctx.obj['db']}")
 
@@ -242,11 +248,29 @@ def export(ctx, format, output, sentiment, relevant_only):
 
 
 @main.command()
+@click.option("--platform", "-p", type=click.Choice(["twitter", "bluesky", "all"]), default="all")
 @click.pass_context
-def preset(ctx):
+def preset(ctx, platform):
     """Scrape using the AI opinions preset queries."""
     config = ScraperConfig.ai_opinions_preset()
-    click.echo(f"Using {len(config.search_queries)} preset queries:")
-    for q in config.search_queries:
-        click.echo(f"  - {q}")
-    ctx.invoke(scrape, query=config.search_queries, max_results=config.max_results, platform="all")
+
+    if platform == "all":
+        click.echo(f"Using {len(config.search_queries)} preset queries for Twitter:")
+        for q in config.search_queries:
+            click.echo(f"  - {q}")
+        ctx.invoke(scrape, query=config.search_queries, max_results=config.max_results, platform="twitter")
+
+        bsky_queries = config.bluesky_search_queries or config.search_queries
+        click.echo(f"\nUsing {len(bsky_queries)} preset queries for Bluesky:")
+        for q in bsky_queries:
+            click.echo(f"  - {q}")
+        ctx.invoke(scrape, query=bsky_queries, max_results=config.max_results, platform="bluesky")
+    else:
+        if platform == "bluesky" and config.bluesky_search_queries:
+            queries = config.bluesky_search_queries
+        else:
+            queries = config.search_queries
+        click.echo(f"Using {len(queries)} preset queries:")
+        for q in queries:
+            click.echo(f"  - {q}")
+        ctx.invoke(scrape, query=queries, max_results=config.max_results, platform=platform)

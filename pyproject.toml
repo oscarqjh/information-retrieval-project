@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Scrape Twitter/X and Bluesky for public opinions on AI tools"
 requires-python = ">=3.10"
 dependencies = [
-    "twscrape>=0.17.0",
     "atproto>=0.0.55",
     "vaderSentiment>=3.3.2",
     "click>=8.1.0",

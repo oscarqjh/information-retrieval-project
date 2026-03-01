@@ -45,6 +45,15 @@ def scrape(ctx, query, max_results, platform, with_replies, min_replies, reply_d
         if platform in ("twitter", "all"):
             click.echo("Scraping Twitter/X...")
             scraper = TwitterScraper()
+            tw_user = os.environ.get("TWITTER_USERNAME")
+            tw_pass = os.environ.get("TWITTER_PASSWORD")
+            tw_email = os.environ.get("TWITTER_EMAIL")
+            tw_email_pass = os.environ.get("TWITTER_EMAIL_PASSWORD")
+            if tw_user and tw_pass and tw_email and tw_email_pass:
+                try:
+                    await scraper.add_account(tw_user, tw_pass, tw_email, tw_email_pass)
+                except Exception:
+                    pass  # Account may already be in pool
             for q in config.search_queries:
                 with click.progressbar(length=config.max_results, label=f"  [{q}]") as bar:
                     opinions = await scraper.scrape(

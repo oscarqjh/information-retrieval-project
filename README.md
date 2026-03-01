@@ -38,8 +38,12 @@ cp .env.example .env  # if available, or create .env manually
 |----------|-------------|-------------|
 | `BSKY_HANDLE` | Bluesky | Your Bluesky handle (e.g. `user.bsky.social`) |
 | `BSKY_PASSWORD` | Bluesky | Bluesky app password |
+| `TWITTER_USERNAME` | Twitter/X | Your Twitter/X username |
+| `TWITTER_PASSWORD` | Twitter/X | Your Twitter/X password |
+| `TWITTER_EMAIL` | Twitter/X | Email associated with the account |
+| `TWITTER_EMAIL_PASSWORD` | Twitter/X | Email password (for twscrape login verification) |
 
-Twitter/X uses twscrape which manages its own account pool — see [twscrape docs](https://github.com/vladkens/twscrape) for setup.
+Copy `.env.example` to `.env` and fill in credentials for the platforms you want to scrape. Twitter/X credentials are automatically added to the [twscrape](https://github.com/vladkens/twscrape) account pool on first run.
 
 ## Usage
 

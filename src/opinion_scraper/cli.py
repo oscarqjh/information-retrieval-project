@@ -161,11 +161,13 @@ def report(ctx, relevant_only):
         return
 
     summary = analyzer.summarize(all_opinions)
-    counts = store.count_by_platform()
+    counts: dict[str, int] = {}
+    for o in all_opinions:
+        counts[o.platform] = counts.get(o.platform, 0) + 1
 
     click.echo("\n=== Opinion Scraper Report ===\n")
     click.echo(f"Total opinions: {summary['total']}")
-    for platform, count in counts.items():
+    for platform, count in sorted(counts.items()):
         click.echo(f"  {platform}: {count}")
     click.echo(f"\nSentiment breakdown:")
     click.echo(f"  Positive: {summary['positive']} ({summary['positive']/max(summary['total'],1)*100:.1f}%)")
@@ -186,7 +188,7 @@ def report(ctx, relevant_only):
 @click.option("--format", "-f", type=click.Choice(["csv", "json", "jsonl"]), required=True, help="Export format.")
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output file path.")
 @click.option("--sentiment", "-s", type=click.Choice(["all", "positive", "negative", "neutral"]), default="all", help="Filter by sentiment.")
-@click.option("--platform", "-p", type=click.Choice(["all", "bluesky"]), default="all", help="Filter by platform.")
+@click.option("--platform", "-p", type=click.Choice(["all", "bluesky", "reddit"]), default="all", help="Filter by platform.")
 @click.option("--relevant-only", is_flag=True, default=False, help="Exclude spam/off-topic posts.")
 @click.pass_context
 def export(ctx, format, output, sentiment, platform, relevant_only):

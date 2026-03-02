@@ -17,7 +17,6 @@ Scrape Bluesky for public opinions on AI tools, then filter, analyze sentiment, 
 
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- GPU with CUDA support (for ML relevance filtering; 4x H100 recommended)
 
 ## Setup
 

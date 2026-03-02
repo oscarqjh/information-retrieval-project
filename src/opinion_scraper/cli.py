@@ -183,7 +183,7 @@ def report(ctx, relevant_only):
 
 
 @main.command()
-@click.option("--format", "-f", type=click.Choice(["csv", "json"]), required=True, help="Export format.")
+@click.option("--format", "-f", type=click.Choice(["csv", "json", "jsonl"]), required=True, help="Export format.")
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output file path.")
 @click.option("--sentiment", "-s", type=click.Choice(["all", "positive", "negative", "neutral"]), default="all", help="Filter by sentiment.")
 @click.option("--platform", "-p", type=click.Choice(["all", "bluesky"]), default="all", help="Filter by platform.")
@@ -212,6 +212,8 @@ def export(ctx, format, output, sentiment, platform, relevant_only):
     exporter = OpinionExporter()
     if format == "csv":
         exporter.to_csv(all_opinions, output)
+    elif format == "jsonl":
+        exporter.to_jsonl(all_opinions, output)
     else:
         exporter.to_json(all_opinions, output)
 

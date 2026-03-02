@@ -29,6 +29,12 @@ class OpinionExporter:
         with open(path, "w") as f:
             json.dump(data, f, indent=2, default=str)
 
+    def to_jsonl(self, opinions: list[Opinion], path: str):
+        """Export opinions to a JSONL (line-delimited JSON) file."""
+        with open(path, "w") as f:
+            for o in opinions:
+                f.write(json.dumps(self._to_dict(o), default=str) + "\n")
+
     @staticmethod
     def _to_dict(opinion: Opinion) -> dict:
         return {

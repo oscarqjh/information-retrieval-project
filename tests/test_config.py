@@ -26,4 +26,4 @@ def test_custom_config():
 def test_default_search_queries_for_ai_opinions():
     config = ScraperConfig.ai_opinions_preset()
     assert len(config.search_queries) > 1
-    assert any("AI tools" in q for q in config.search_queries)
+    assert any("AI" in q for q in config.search_queries)

@@ -149,3 +149,26 @@ def test_default_reply_fields(store, sample_opinion):
     assert results[0].parent_post_id is None
     assert results[0].relevance_score is None
     assert results[0].relevance_label is None
+
+
+def test_get_uncleaned(store, sample_opinion):
+    store.save(sample_opinion)
+    assert len(store.get_uncleaned()) == 1
+    store.update_cleaned(sample_opinion.post_id, "cleaned text", "cleaned")
+    assert len(store.get_uncleaned()) == 0
+
+
+def test_update_cleaned_marks_too_short(store, sample_opinion):
+    store.save(sample_opinion)
+    store.update_cleaned(sample_opinion.post_id, None, "too_short")
+    result = store.get_all()[0]
+    assert result.cleaned_text is None
+    assert result.clean_status == "too_short"
+
+
+def test_update_cleaned_stores_text(store, sample_opinion):
+    store.save(sample_opinion)
+    store.update_cleaned(sample_opinion.post_id, "ai tool amazing", "cleaned")
+    result = store.get_all()[0]
+    assert result.cleaned_text == "ai tool amazing"
+    assert result.clean_status == "cleaned"

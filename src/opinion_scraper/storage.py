@@ -23,6 +23,8 @@ class Opinion:
     parent_post_id: str | None = None
     relevance_score: float | None = None
     relevance_label: str | None = None
+    cleaned_text: str | None = None
+    clean_status: str | None = None
 
 
 class OpinionStore:
@@ -52,6 +54,11 @@ class OpinionStore:
                     relevance_label TEXT
                 )
             """)
+            for col in ["cleaned_text TEXT", "clean_status TEXT"]:
+                try:
+                    conn.execute(f"ALTER TABLE opinions ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     def save(self, opinion: Opinion):
         with sqlite3.connect(self.db_path) as conn:
@@ -105,6 +112,20 @@ class OpinionStore:
                 (score, label, post_id),
             )
 
+    def get_uncleaned(self) -> list[Opinion]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM opinions WHERE clean_status IS NULL"
+            ).fetchall()
+        return [self._row_to_opinion(r) for r in rows]
+
+    def update_cleaned(self, post_id: str, cleaned_text: str | None, clean_status: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE opinions SET cleaned_text = ?, clean_status = ? WHERE post_id = ?",
+                (cleaned_text, clean_status, post_id),
+            )
+
     def get_unfiltered(self) -> list[Opinion]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
@@ -136,4 +157,6 @@ class OpinionStore:
             parent_post_id=row[11],
             relevance_score=row[12],
             relevance_label=row[13],
+            cleaned_text=row[14] if len(row) > 14 else None,
+            clean_status=row[15] if len(row) > 15 else None,
         )

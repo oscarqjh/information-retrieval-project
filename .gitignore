@@ -8,3 +8,4 @@ build/
 *.sqlite
 .env
 .python-version
+.worktrees/

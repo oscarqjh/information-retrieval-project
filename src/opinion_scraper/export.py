@@ -9,6 +9,7 @@ FIELDS = [
     "platform", "post_id", "author", "text", "created_at",
     "query", "likes", "reposts", "sentiment_score", "sentiment_label",
     "is_reply", "parent_post_id", "relevance_score", "relevance_label",
+    "cleaned_text", "clean_status",
 ]
 
 
@@ -52,4 +53,6 @@ class OpinionExporter:
             "parent_post_id": opinion.parent_post_id,
             "relevance_score": opinion.relevance_score,
             "relevance_label": opinion.relevance_label,
+            "cleaned_text": opinion.cleaned_text,
+            "clean_status": opinion.clean_status,
         }

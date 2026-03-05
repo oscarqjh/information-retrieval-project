@@ -104,6 +104,31 @@ def analyze(ctx):
     click.echo("Done. Run 'opinion-scraper report' to see results.")
 
 
+@main.command()
+@click.pass_context
+def clean(ctx):
+    """Clean and preprocess opinion text."""
+    from opinion_scraper.cleaner import TextCleaner
+
+    store = OpinionStore(ctx.obj["db"])
+    cleaner = TextCleaner()
+
+    uncleaned = store.get_uncleaned()
+    if not uncleaned:
+        click.echo("No uncleaned opinions found.")
+        return
+
+    stats = {"cleaned": 0, "too_short": 0, "bot": 0}
+    with click.progressbar(uncleaned, label="Cleaning opinions") as bar:
+        for opinion in bar:
+            cleaned_text, status = cleaner.clean(opinion.text, opinion.author)
+            store.update_cleaned(opinion.post_id, cleaned_text, status)
+            stats[status] += 1
+
+    click.echo(f"\nResults: {stats['cleaned']} cleaned, "
+               f"{stats['too_short']} too short, {stats['bot']} bot")
+
+
 @main.command(name="filter")
 @click.option("--threshold", default=0.5, help="Minimum confidence threshold.")
 @click.option("--model", default="MoritzLaurer/deberta-v3-large-zeroshot-v2.0", help="HuggingFace model name.")
@@ -123,7 +148,7 @@ def filter_cmd(ctx, threshold, model, batch_size):
     click.echo(f"Loading model: {model}")
     classifier = RelevanceClassifier(model_name=model, batch_size=batch_size)
 
-    texts = [o.text for o in unfiltered]
+    texts = [o.cleaned_text or o.text for o in unfiltered]
     click.echo(f"Classifying {len(texts)} opinions...")
 
     with click.progressbar(range(0, len(texts), batch_size), label="Filtering") as bar:

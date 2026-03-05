@@ -85,10 +85,13 @@ def scrape(ctx, query, max_results, with_replies, min_replies, reply_depth):
 
 
 @main.command()
+@click.option("--force", is_flag=True, default=False, help="Re-analyze all opinions.")
 @click.pass_context
-def analyze(ctx):
+def analyze(ctx, force):
     """Run sentiment analysis on unanalyzed opinions."""
     store = OpinionStore(ctx.obj["db"])
+    if force:
+        store.reset_sentiment()
     analyzer = SentimentAnalyzer()
 
     unanalyzed = store.get_unanalyzed()
@@ -105,12 +108,15 @@ def analyze(ctx):
 
 
 @main.command()
+@click.option("--force", is_flag=True, default=False, help="Re-clean all opinions.")
 @click.pass_context
-def clean(ctx):
+def clean(ctx, force):
     """Clean and preprocess opinion text."""
     from opinion_scraper.cleaner import TextCleaner
 
     store = OpinionStore(ctx.obj["db"])
+    if force:
+        store.reset_cleaned()
     cleaner = TextCleaner()
 
     uncleaned = store.get_uncleaned()
@@ -133,12 +139,15 @@ def clean(ctx):
 @click.option("--threshold", default=0.5, help="Minimum confidence threshold.")
 @click.option("--model", default="MoritzLaurer/deberta-v3-large-zeroshot-v2.0", help="HuggingFace model name.")
 @click.option("--batch-size", default=64, help="Inference batch size.")
+@click.option("--force", is_flag=True, default=False, help="Re-classify all opinions.")
 @click.pass_context
-def filter_cmd(ctx, threshold, model, batch_size):
+def filter_cmd(ctx, threshold, model, batch_size, force):
     """Run ML relevance classification on unfiltered opinions."""
     from opinion_scraper.relevance import RelevanceClassifier
 
     store = OpinionStore(ctx.obj["db"])
+    if force:
+        store.reset_relevance()
     unfiltered = store.get_unfiltered()
 
     if not unfiltered:
@@ -157,8 +166,7 @@ def filter_cmd(ctx, threshold, model, batch_size):
             batch_opinions = unfiltered[i:i + batch_size]
             results = classifier.classify_batch(batch_texts)
             for opinion, (score, label) in zip(batch_opinions, results):
-                if score >= threshold:
-                    store.update_relevance(opinion.post_id, score, label)
+                store.update_relevance(opinion.post_id, score, label)
 
     # Summary
     all_opinions = store.get_all()
@@ -215,8 +223,9 @@ def report(ctx, relevant_only):
 @click.option("--sentiment", "-s", type=click.Choice(["all", "positive", "negative", "neutral"]), default="all", help="Filter by sentiment.")
 @click.option("--platform", "-p", type=click.Choice(["all", "bluesky", "reddit"]), default="all", help="Filter by platform.")
 @click.option("--relevant-only", is_flag=True, default=False, help="Exclude spam/off-topic posts.")
+@click.option("--clean-text-only", is_flag=True, default=False, help="Use cleaned text in the text column, drop cleaned_text/clean_status columns.")
 @click.pass_context
-def export(ctx, format, output, sentiment, platform, relevant_only):
+def export(ctx, format, output, sentiment, platform, relevant_only, clean_text_only):
     """Export opinions to CSV or JSON."""
     from opinion_scraper.export import OpinionExporter
 
@@ -238,11 +247,11 @@ def export(ctx, format, output, sentiment, platform, relevant_only):
 
     exporter = OpinionExporter()
     if format == "csv":
-        exporter.to_csv(all_opinions, output)
+        exporter.to_csv(all_opinions, output, clean_text_only)
     elif format == "jsonl":
-        exporter.to_jsonl(all_opinions, output)
+        exporter.to_jsonl(all_opinions, output, clean_text_only)
     else:
-        exporter.to_json(all_opinions, output)
+        exporter.to_json(all_opinions, output, clean_text_only)
 
     click.echo(f"Exported {len(all_opinions)} opinions to {output}")
 

@@ -1,14 +1,17 @@
 """Text cleaning and NLP preprocessing for scraped opinions."""
 
 import re
+import warnings
 
 import contractions
 import emoji
 import nltk
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
+
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 MIN_WORD_COUNT = 10
 
@@ -74,16 +77,28 @@ class TextCleaner:
         text = re.sub(r"https?://\S+", "", text)
         # 6. Remove numbers
         text = re.sub(r"\d+", "", text)
-        # 7. Remove punctuation and special characters
-        text = re.sub(r"[^\w\s]", "", text)
+        # 7. Remove punctuation and special characters (preserve hashtags)
+        text = re.sub(r"[^\w\s#]", "", text)
         # 8. Normalize whitespace
         text = re.sub(r"\s+", " ", text).strip()
-        # 9. Tokenize
-        tokens = word_tokenize(text)
+        # 9. Tokenize and rejoin hashtags
+        raw_tokens = word_tokenize(text)
+        tokens = []
+        i = 0
+        while i < len(raw_tokens):
+            if raw_tokens[i] == "#" and i + 1 < len(raw_tokens):
+                tokens.append(f"#{raw_tokens[i + 1]}")
+                i += 2
+            else:
+                tokens.append(raw_tokens[i])
+                i += 1
         # 10. Remove stop words
         tokens = [t for t in tokens if t not in self._stop_words]
-        # 11. Lemmatize
-        tokens = [self._lemmatizer.lemmatize(t) for t in tokens]
+        # 11. Lemmatize (skip hashtag tokens)
+        tokens = [
+            t if t.startswith("#") else self._lemmatizer.lemmatize(t)
+            for t in tokens
+        ]
         return " ".join(tokens)
 
     @staticmethod

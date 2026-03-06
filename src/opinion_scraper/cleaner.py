@@ -78,9 +78,11 @@ class TextCleaner:
         # 6. Remove numbers
         text = re.sub(r"\d+", "", text)
         # 7. Remove punctuation and special characters (preserve hashtags)
-        text = re.sub(r"[^\w\s#]", "", text)
+        # text = re.sub(r"[^\w\s#]", "", text)
         # 8. Normalize whitespace
         text = re.sub(r"\s+", " ", text).strip()
+        # remove non standard english
+        text = re.sub(r'[^\x00-\x7F]+', ' ', text)
         # 9. Tokenize and rejoin hashtags
         raw_tokens = word_tokenize(text)
         tokens = []
@@ -93,12 +95,13 @@ class TextCleaner:
                 tokens.append(raw_tokens[i])
                 i += 1
         # 10. Remove stop words
-        tokens = [t for t in tokens if t not in self._stop_words]
+        # tokens = [t for t in tokens if t not in self._stop_words]
         # 11. Lemmatize (skip hashtag tokens)
         tokens = [
             t if t.startswith("#") else self._lemmatizer.lemmatize(t)
             for t in tokens
         ]
+        
         return " ".join(tokens)
 
     @staticmethod

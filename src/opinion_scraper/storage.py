@@ -133,6 +133,18 @@ class OpinionStore:
             ).fetchall()
         return [self._row_to_opinion(r) for r in rows]
 
+    def reset_cleaned(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE opinions SET cleaned_text = NULL, clean_status = NULL")
+
+    def reset_relevance(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE opinions SET relevance_score = NULL, relevance_label = NULL")
+
+    def reset_sentiment(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE opinions SET sentiment_score = NULL, sentiment_label = NULL")
+
     def count_by_platform(self) -> dict[str, int]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(

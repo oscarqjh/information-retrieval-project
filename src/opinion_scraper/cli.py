@@ -124,15 +124,31 @@ def clean(ctx, force):
         click.echo("No uncleaned opinions found.")
         return
 
-    stats = {"cleaned": 0, "too_short": 0, "bot": 0}
+    # First pass: detect duplicate texts (spam bots posting identical content)
+    from hashlib import md5
+    text_hashes: dict[str, str] = {}  # hash -> first post_id
+    duplicate_ids: set[str] = set()
+    for opinion in uncleaned:
+        h = md5(opinion.text.strip().lower().encode()).hexdigest()
+        if h in text_hashes:
+            duplicate_ids.add(opinion.post_id)
+        else:
+            text_hashes[h] = opinion.post_id
+
+    stats = {"cleaned": 0, "too_short": 0, "bot": 0, "duplicate": 0}
     with click.progressbar(uncleaned, label="Cleaning opinions") as bar:
         for opinion in bar:
+            if opinion.post_id in duplicate_ids:
+                store.update_cleaned(opinion.post_id, None, "duplicate")
+                stats["duplicate"] += 1
+                continue
             cleaned_text, status = cleaner.clean(opinion.text, opinion.author)
             store.update_cleaned(opinion.post_id, cleaned_text, status)
             stats[status] += 1
 
     click.echo(f"\nResults: {stats['cleaned']} cleaned, "
-               f"{stats['too_short']} too short, {stats['bot']} bot")
+               f"{stats['too_short']} too short, {stats['bot']} bot, "
+               f"{stats['duplicate']} duplicate")
 
 
 @main.command(name="filter")
@@ -224,8 +240,9 @@ def report(ctx, relevant_only):
 @click.option("--platform", "-p", type=click.Choice(["all", "bluesky", "reddit"]), default="all", help="Filter by platform.")
 @click.option("--relevant-only", is_flag=True, default=False, help="Exclude spam/off-topic posts.")
 @click.option("--clean-text-only", is_flag=True, default=False, help="Use cleaned text in the text column, drop cleaned_text/clean_status columns.")
+@click.option("--exclude-rejected", is_flag=True, default=False, help="Exclude bot and too-short posts.")
 @click.pass_context
-def export(ctx, format, output, sentiment, platform, relevant_only, clean_text_only):
+def export(ctx, format, output, sentiment, platform, relevant_only, clean_text_only, exclude_rejected):
     """Export opinions to CSV or JSON."""
     from opinion_scraper.export import OpinionExporter
 
@@ -244,6 +261,9 @@ def export(ctx, format, output, sentiment, platform, relevant_only, clean_text_o
 
     if relevant_only:
         all_opinions = [o for o in all_opinions if o.relevance_label in (None, "relevant")]
+
+    if exclude_rejected or clean_text_only:
+        all_opinions = [o for o in all_opinions if o.clean_status not in ("bot", "too_short", "duplicate")]
 
     exporter = OpinionExporter()
     if format == "csv":

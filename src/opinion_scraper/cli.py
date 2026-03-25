@@ -194,6 +194,86 @@ def filter_cmd(ctx, threshold, model, batch_size, force):
 
 
 @main.command()
+@click.option("--task", "-t", type=click.Choice(["subjectivity", "polarity", "both"]), default="both", help="Which task to run.")
+@click.option("--model-type", "-m", type=click.Choice(["finetuned", "pretrained"]), default="finetuned", help="Use finetuned or pretrained model.")
+@click.option("--batch-size", default=32, help="Inference batch size.")
+@click.option("--force", is_flag=True, default=False, help="Re-classify all opinions.")
+@click.option("--platform", "-p", type=click.Choice(["all", "bluesky", "reddit"]), default="all", help="Filter by platform.")
+@click.pass_context
+def classify(ctx, task, model_type, batch_size, force, platform):
+    """Classify opinions for subjectivity and/or polarity using ML models."""
+    import torch
+    from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+
+    store = OpinionStore(ctx.obj["db"])
+    device = 0 if torch.cuda.is_available() else -1
+    tasks = ["subjectivity", "polarity"] if task == "both" else [task]
+
+    model_configs = {
+        "subjectivity": {
+            "finetuned": "models/subjectivity_detection/best_model",
+            "pretrained": "facebook/bart-large-mnli",
+            "labels": ["neutral", "opinionated"],
+        },
+        "polarity": {
+            "finetuned": "models/polarity_detection/best_model",
+            "pretrained": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+            "labels": ["positive", "neutral", "negative"],
+        },
+    }
+
+    for t in tasks:
+        config = model_configs[t]
+        model_path = config[model_type]
+
+        if force:
+            store.reset_classification(t)
+
+        unclassified = store.get_unclassified(t)
+        if platform != "all":
+            unclassified = [o for o in unclassified if o.platform == platform]
+
+        if not unclassified:
+            click.echo(f"[{t}] No unclassified opinions found.")
+            continue
+
+        click.echo(f"[{t}] Loading model: {model_path}")
+        click.echo(f"[{t}] Classifying {len(unclassified)} opinions...")
+
+        if model_type == "pretrained" and t == "subjectivity":
+            # Zero-shot classification for subjectivity
+            classifier = pipeline("zero-shot-classification", model=model_path, device=device, batch_size=batch_size)
+            with click.progressbar(range(0, len(unclassified), batch_size), label=f"  [{t}]") as bar:
+                for i in bar:
+                    batch = unclassified[i:i + batch_size]
+                    texts = [o.cleaned_text or o.text for o in batch]
+                    results = classifier(texts, candidate_labels=config["labels"], batch_size=batch_size)
+                    if isinstance(results, dict):
+                        results = [results]
+                    updates = [(o.post_id, r["labels"][0]) for o, r in zip(batch, results)]
+                    store.update_classification_batch(updates, t)
+        else:
+            # Direct classification (finetuned models or pretrained sentiment)
+            classifier = pipeline("text-classification", model=model_path, device=device, batch_size=batch_size, truncation=True, max_length=512)
+            with click.progressbar(range(0, len(unclassified), batch_size), label=f"  [{t}]") as bar:
+                for i in bar:
+                    batch = unclassified[i:i + batch_size]
+                    texts = [o.cleaned_text or o.text for o in batch]
+                    results = classifier(texts, batch_size=batch_size)
+                    updates = [(o.post_id, r["label"].lower()) for o, r in zip(batch, results)]
+                    store.update_classification_batch(updates, t)
+
+        # Summary
+        all_opinions = store.get_all()
+        if platform != "all":
+            all_opinions = [o for o in all_opinions if o.platform == platform]
+        col_val = [getattr(o, f"{t}_label") for o in all_opinions]
+        from collections import Counter
+        dist = Counter(v for v in col_val if v is not None)
+        click.echo(f"\n[{t}] Results: {dict(dist)}")
+
+
+@main.command()
 @click.option("--relevant-only", is_flag=True, default=False, help="Exclude spam/off-topic posts.")
 @click.pass_context
 def report(ctx, relevant_only):

@@ -25,6 +25,8 @@ class Opinion:
     relevance_label: str | None = None
     cleaned_text: str | None = None
     clean_status: str | None = None
+    subjectivity_label: str | None = None
+    polarity_label: str | None = None
 
 
 class OpinionStore:
@@ -54,7 +56,7 @@ class OpinionStore:
                     relevance_label TEXT
                 )
             """)
-            for col in ["cleaned_text TEXT", "clean_status TEXT"]:
+            for col in ["cleaned_text TEXT", "clean_status TEXT", "subjectivity_label TEXT", "polarity_label TEXT"]:
                 try:
                     conn.execute(f"ALTER TABLE opinions ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -145,6 +147,39 @@ class OpinionStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE opinions SET sentiment_score = NULL, sentiment_label = NULL")
 
+    def get_unclassified(self, task: str) -> list[Opinion]:
+        """Get opinions not yet classified for a given task (subjectivity or polarity)."""
+        col = f"{task}_label"
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT * FROM opinions WHERE {col} IS NULL"
+            ).fetchall()
+        return [self._row_to_opinion(r) for r in rows]
+
+    def update_classification(self, post_id: str, task: str, label: str):
+        """Update subjectivity_label or polarity_label for a post."""
+        col = f"{task}_label"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                f"UPDATE opinions SET {col} = ? WHERE post_id = ?",
+                (label, post_id),
+            )
+
+    def update_classification_batch(self, updates: list[tuple[str, str]], task: str):
+        """Batch update classification labels. updates: list of (post_id, label)."""
+        col = f"{task}_label"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executemany(
+                f"UPDATE opinions SET {col} = ? WHERE post_id = ?",
+                [(label, post_id) for post_id, label in updates],
+            )
+
+    def reset_classification(self, task: str):
+        """Reset subjectivity_label or polarity_label."""
+        col = f"{task}_label"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(f"UPDATE opinions SET {col} = NULL")
+
     def count_by_platform(self) -> dict[str, int]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
@@ -171,4 +206,6 @@ class OpinionStore:
             relevance_label=row[13],
             cleaned_text=row[14] if len(row) > 14 else None,
             clean_status=row[15] if len(row) > 15 else None,
+            subjectivity_label=row[16] if len(row) > 16 else None,
+            polarity_label=row[17] if len(row) > 17 else None,
         )

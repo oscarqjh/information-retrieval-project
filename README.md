@@ -1,6 +1,6 @@
 # Opinion Scraper
 
-Scrape Bluesky for public opinions on AI tools, then filter, analyze sentiment, and export results.
+Scrape Bluesky for public opinions on AI tools, then filter, classify, analyze, and export results.
 
 ## Features
 
@@ -9,6 +9,11 @@ Scrape Bluesky for public opinions on AI tools, then filter, analyze sentiment, 
 - **Two-layer relevance filtering**
   - Rule-based (inline during scrape): min text length, language check, URL/hashtag density, keyword blocklist, near-duplicate detection
   - ML-powered (post-scrape): zero-shot classification using HuggingFace transformers on GPU
+- **Hierarchical opinion classification**
+  - Stage 1: `neutral` vs `opinionated`
+  - Stage 2: `negative` vs `positive` for stage-1 opinionated posts only
+  - Fine-tuning and ablation tooling for the manually labeled dataset
+- **Dedicated sarcasm detection** — separate classifier and evaluation pipeline for an imbalanced sarcasm task
 - **Text cleaning** — NLP preprocessing pipeline (HTML removal, contraction expansion, emoji conversion, stop word removal, lemmatization, bot detection)
 - **Sentiment analysis** — VADER-based positive/negative/neutral scoring
 - **Deduplication** — `post_id` primary key prevents duplicate entries across runs
@@ -61,6 +66,60 @@ uv run opinion-scraper report --relevant-only
 # 6. Export — relevant opinions to CSV
 uv run opinion-scraper export -f csv -o opinions.csv --relevant-only --clean-text-only
 ```
+
+### Training and Evaluating the Classifiers
+
+The project now includes a classification package under `src/opinion_scraper/classification/` with three main workflows:
+
+- ablation experiments for the classification design
+- a separate sarcasm detector and CSV annotation pipeline
+
+#### Run the ablation study
+
+```bash
+uv run opinion-scraper run-hierarchical-ablation \
+  --output-dir artifacts/ablation \
+  --base-model MoritzLaurer/deberta-v3-large-zeroshot-v2.0
+```
+
+The ablation runner compares:
+
+- `baseline_hierarchical_finetuned` — hierarchical design + fine-tuning
+- `ablation_no_finetuning` — hierarchical zero-shot NLI without fine-tuning
+- `ablation_no_hierarchy` — single flat 3-class classifier
+
+#### Evaluate the zero-shot sarcasm detector on the manual labels
+
+```bash
+uv run opinion-scraper evaluate-sarcasm-classifier \
+  --model MoritzLaurer/deberta-v3-large-zeroshot-v2.0
+```
+
+#### Annotate the full CSV in place
+
+Hierarchical subjectivity/polarity:
+
+```bash
+uv run opinion-scraper annotate-hierarchical \
+  --subjectivity-model artifacts/ablation/baseline_hierarchical_finetuned/subjectivity \
+  --polarity-model artifacts/ablation/baseline_hierarchical_finetuned/polarity \
+  --csv-path data/all_opinions.csv \
+  --force
+```
+
+Sarcasm:
+
+```bash
+uv run opinion-scraper annotate-sarcasm \
+  --model MoritzLaurer/deberta-v3-large-zeroshot-v2.0 \
+  --csv-path data/all_opinions.csv \
+  --force
+```
+
+Both annotation commands default to GPU (`--device 0`) and write run metrics to:
+
+- `data/all_opinions.csv.hierarchical.metrics.json`
+- `data/all_opinions.csv.sarcasm.metrics.json`
 
 ### Custom Queries
 
@@ -155,12 +214,13 @@ src/opinion_scraper/
   analysis.py         # VADER sentiment analysis
   filter.py           # Rule-based spam/noise filter
   relevance.py        # ML zero-shot relevance classifier
+  classification/     # Hierarchical classification, sarcasm detection, ablation, annotation
   export.py           # CSV/JSON export
   scraper/
     base.py           # Abstract base scraper
     bluesky.py        # Bluesky scraper (AT Protocol)
 
-tests/                # 59 tests covering all modules
+tests/                # 80 tests covering scraping, filtering, classification, and export
 ```
 
 ## Pipeline Architecture
@@ -203,3 +263,14 @@ report / export
 ```bash
 uv run pytest tests/ -v
 ```
+
+## Classification Artifacts
+
+The repository contains example experiment outputs under `artifacts/` and end-to-end annotation metrics next to `data/all_opinions.csv`.
+
+- `artifacts/ablation/baseline_hierarchical_finetuned/` — current hierarchical subjectivity/polarity models used for downstream inference
+- `artifacts/ablation/` — shared-split ablation study outputs
+- `data/all_opinions.csv.hierarchical.metrics.json` — hierarchical annotation throughput
+- `data/all_opinions.csv.sarcasm.metrics.json` — sarcasm annotation throughput
+
+For a report-ready discussion of the implemented classifiers, evaluation, and ablation study, see [`CLASSIFICATION_EXPERIMENT_REPORT.md`](CLASSIFICATION_EXPERIMENT_REPORT.md).

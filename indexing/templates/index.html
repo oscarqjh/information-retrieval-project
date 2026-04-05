@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Opinion Search</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+
+  :root {
+    --bg: #f8f8fc;
+    --surface: #ffffff;
+    --surface2: #f0f0f5;
+    --border: #e2e2ec;
+    --accent: #7c6af7;
+    --accent2: #f97316;
+    --positive: #16a34a;
+    --neutral: #64748b;
+    --negative: #dc2626;
+    --text: #0d0d0f;
+    --text-muted: #6b6b80;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px;
+  }
+
+  /* Header */
+  header {
+    padding: 40px 48px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 2rem;
+    letter-spacing: -0.03em;
+    color: var(--text);
+  }
+
+  header h1 span {
+    color: var(--accent);
+  }
+
+  header p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  /* Main layout */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 36px 48px;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  /* Sidebar filters */
+  .sidebar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .sidebar h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  .filter-group {
+    margin-bottom: 24px;
+  }
+
+  .filter-group label.group-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .filter-group input[type="date"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-family: 'DM Sans', sans-serif;
+    margin-bottom: 8px;
+    outline: none;
+  }
+
+  .filter-group input[type="date"]:focus {
+    border-color: var(--accent);
+  }
+
+  .date-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  .checkbox-group input[type="checkbox"] {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface2);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .checkbox-group input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .checkbox-group input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    color: white;
+    font-size: 11px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .sentiment-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-positive { background: var(--positive); }
+  .dot-neutral { background: var(--neutral); }
+  .dot-negative { background: var(--negative); }
+
+  select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    font-family: 'DM Sans', sans-serif;
+    outline: none;
+    cursor: pointer;
+  }
+
+  select:focus { border-color: var(--accent); }
+
+  .btn-search {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    margin-top: 4px;
+  }
+
+  .btn-search:hover { opacity: 0.85; }
+
+  /* Main content */
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Search bar */
+  .search-bar-wrap {
+    position: relative;
+  }
+
+  .search-bar-wrap input[type="text"] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 16px 20px;
+    font-size: 1.1rem;
+    font-family: 'DM Sans', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-bar-wrap input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+
+  .search-bar-wrap input::placeholder { color: var(--text-muted); }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    min-height: 24px;
+  }
+
+  .stats-bar strong { color: var(--text); }
+
+  .badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 0.75rem;
+  }
+
+  /* Chart section */
+  .chart-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    display: none;
+  }
+
+  .chart-section h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 32px;
+    align-items: center;
+  }
+
+  .chart-canvas-wrap { position: relative; }
+
+  /* Results */
+  .results { display: flex; flex-direction: column; gap: 12px; }
+
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    transition: border-color 0.2s;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-card:hover { border-color: var(--accent); }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .result-author {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--accent);
+  }
+
+  .result-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .sentiment-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .badge-positive { background: rgba(34,197,94,0.15); color: var(--positive); }
+  .badge-neutral { background: rgba(148,163,184,0.15); color: var(--neutral); }
+  .badge-negative { background: rgba(239,68,68,0.15); color: var(--negative); }
+
+  .result-text {
+    font-size: 0.93rem;
+    line-height: 1.65;
+    color: #3a3a4a;
+    margin-bottom: 12px;
+  }
+
+  .result-text mark {
+    background: rgba(124,106,247,0.25);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 0 2px;
+  }
+
+  .result-footer {
+    display: flex;
+    gap: 16px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .result-footer span { display: flex; align-items: center; gap: 4px; }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .page-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 16px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .page-btn:hover, .page-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty p { margin-top: 8px; font-size: 0.9rem; }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Group 26<span> AI Opinion Search</span></h1>
+  <p>— exploring what people think about artificial intelligence</p>
+</header>
+
+<div class="container">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <h2>Filters</h2>
+
+    <div class="filter-group">
+      <label class="group-label">📅 Date Range</label>
+      <span class="date-label">From</span>
+      <input type="date" id="date_from">
+      <span class="date-label">To</span>
+      <input type="date" id="date_to">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="filter-group">
+      <label class="group-label">😊 Sentiment</label>
+      <div class="checkbox-group">
+        <label>
+          <input type="checkbox" value="positive" class="sentiment-check" checked>
+          <span class="sentiment-dot dot-positive"></span> Positive
+        </label>
+        <label>
+          <input type="checkbox" value="neutral" class="sentiment-check" checked>
+          <span class="sentiment-dot dot-neutral"></span> Neutral
+        </label>
+        <label>
+          <input type="checkbox" value="negative" class="sentiment-check" checked>
+          <span class="sentiment-dot dot-negative"></span> Negative
+        </label>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="filter-group">
+      <label class="group-label">🔃 Sort By</label>
+      <select id="sort">
+        <option value="relevance">Most Relevant</option>
+        <option value="date_desc">Newest First</option>
+        <option value="date_asc">Oldest First</option>
+        <option value="likes">Most Liked</option>
+        <option value="reposts">Most Reposted</option>
+      </select>
+    </div>
+
+    <button class="btn-search" onclick="doSearch(0)">Search</button>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Search bar -->
+    <div class="search-bar-wrap">
+      <input type="text" id="query" placeholder='Search opinions... e.g. ChatGPT, AI jobs, machine learning'
+        onkeydown="if(event.key==='Enter') doSearch(0)">
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar" id="stats"></div>
+
+    <!-- Chart section -->
+    <div class="chart-section" id="chartSection">
+      <h3>📊 Sentiment Breakdown</h3>
+      <div class="charts-grid">
+        <div class="chart-canvas-wrap">
+          <canvas id="pieChart" width="200" height="200"></canvas>
+        </div>
+        <div id="sentimentSummary" style="font-size:0.9rem; line-height:2; color: var(--text-muted);"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="results" id="results">
+      <div class="empty">
+        <div style="font-size:2rem;">🔍</div>
+        <p>Enter a query to search opinions about AI</p>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<script>
+let pieChartInstance = null;
+let currentStart = 0;
+const ROWS = 10;
+
+async function doSearch(start) {
+  currentStart = start;
+  const query = document.getElementById('query').value.trim() || '*';
+  const dateFrom = document.getElementById('date_from').value;
+  const dateTo = document.getElementById('date_to').value;
+  const sort = document.getElementById('sort').value;
+  const sentiments = [...document.querySelectorAll('.sentiment-check:checked')].map(c => c.value);
+
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('sort', sort);
+  params.set('start', start);
+  params.set('rows', ROWS);
+  if (dateFrom) params.set('date_from', dateFrom + 'T00:00:00Z');
+  if (dateTo) params.set('date_to', dateTo + 'T23:59:59Z');
+  sentiments.forEach(s => params.append('sentiment', s));
+
+  document.getElementById('stats').innerHTML = '<span style="color:var(--text-muted)">Searching...</span>';
+
+  const res = await fetch('/search?' + params.toString());
+  const data = await res.json();
+
+  renderStats(data);
+  renderResults(data.docs);
+  renderChart(data.facets);
+  renderPagination(data.numFound, start);
+}
+
+function renderStats(data) {
+  const el = document.getElementById('stats');
+  if (data.numFound === 0) {
+    el.innerHTML = 'No results found';
+    return;
+  }
+  el.innerHTML = `
+    Found <strong>${data.numFound.toLocaleString()}</strong> results
+    <span class="badge">⚡ ${data.elapsed}ms</span>
+  `;
+}
+
+function renderResults(docs) {
+  const el = document.getElementById('results');
+  if (!docs.length) {
+    el.innerHTML = '<div class="empty"><div style="font-size:2rem">😕</div><p>No results found. Try a different query or adjust filters.</p></div>';
+    return;
+  }
+
+  el.innerHTML = docs.map((doc, i) => {
+    const sentiment = doc.sentiment_label || 'neutral';
+    const badgeClass = sentiment === 'positive' ? 'badge-positive' : sentiment === 'negative' ? 'badge-negative' : 'badge-neutral';
+    const date = doc.created_at ? doc.created_at.substring(0, 10) : '';
+    const text = doc.highlighted_text || doc.text || '';
+    const subjectivity = doc.subjectivity_label || '';
+    const polarity = doc.polarity_label || '';
+
+    return `
+      <div class="result-card" style="animation-delay: ${i * 0.04}s">
+        <div class="result-header">
+          <span class="result-author">@${doc.author || 'unknown'}</span>
+          <div class="result-meta">
+            <span>${date}</span>
+            <span class="sentiment-badge ${badgeClass}">${sentiment}</span>
+          </div>
+        </div>
+        <div class="result-text">${text}</div>
+        <div class="result-footer">
+          <span>❤️ ${doc.likes || 0} likes</span>
+          <span>🔁 ${doc.reposts || 0} reposts</span>
+          <span>📌 ${doc.query || ''}</span>
+          <span>🧠 ${subjectivity}</span>
+          <span>🎯 ${polarity}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderChart(facets) {
+  const section = document.getElementById('chartSection');
+  if (!facets || Object.keys(facets).length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  const labels = Object.keys(facets);
+  const values = Object.values(facets);
+  const total = values.reduce((a, b) => a + b, 0);
+
+  const colors = {
+    positive: '#22c55e',
+    neutral: '#94a3b8',
+    negative: '#ef4444',
+  };
+
+  const bgColors = labels.map(l => colors[l] || '#7c6af7');
+
+  if (pieChartInstance) pieChartInstance.destroy();
+
+  const ctx = document.getElementById('pieChart').getContext('2d');
+  pieChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: bgColors,
+        borderColor: '#16161a',
+        borderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`
+          }
+        }
+      },
+      cutout: '65%',
+    }
+  });
+
+  // Summary text
+  document.getElementById('sentimentSummary').innerHTML = labels.map(l => {
+    const pct = ((facets[l] / total) * 100).toFixed(1);
+    const col = colors[l] || '#7c6af7';
+    return `<div><span style="color:${col};font-weight:600;text-transform:capitalize">${l}</span>
+      &nbsp;— ${facets[l].toLocaleString()} posts (${pct}%)</div>`;
+  }).join('');
+}
+
+function renderPagination(numFound, start) {
+  const el = document.getElementById('pagination');
+  const totalPages = Math.ceil(numFound / ROWS);
+  const currentPage = Math.floor(start / ROWS);
+
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  let pages = [];
+  // Prev button
+  pages.push(`<button class="page-btn" onclick="doSearch(${(currentPage-1)*ROWS})" ${currentPage===0?'disabled':''}>← Prev</button>`);
+
+  // Page numbers (show up to 5 around current)
+  const pageStart = Math.max(0, currentPage - 2);
+  const pageEnd = Math.min(totalPages - 1, currentPage + 2);
+  for (let p = pageStart; p <= pageEnd; p++) {
+    pages.push(`<button class="page-btn ${p===currentPage?'active':''}" onclick="doSearch(${p*ROWS})">${p+1}</button>`);
+  }
+
+  // Next button
+  pages.push(`<button class="page-btn" onclick="doSearch(${(currentPage+1)*ROWS})" ${currentPage===totalPages-1?'disabled':''}>Next →</button>`);
+
+  el.innerHTML = pages.join('');
+}
+</script>
+</body>
+</html>

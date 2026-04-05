@@ -10,6 +10,7 @@ FIELDS = [
     "query", "likes", "reposts", "sentiment_score", "sentiment_label",
     "is_reply", "parent_post_id", "relevance_score", "relevance_label",
     "cleaned_text", "clean_status",
+    "subjectivity_label", "polarity_label",
 ]
 
 
@@ -65,4 +66,6 @@ class OpinionExporter:
         if not clean_text_only:
             d["cleaned_text"] = opinion.cleaned_text
             d["clean_status"] = opinion.clean_status
+        d["subjectivity_label"] = opinion.subjectivity_label
+        d["polarity_label"] = opinion.polarity_label
         return d

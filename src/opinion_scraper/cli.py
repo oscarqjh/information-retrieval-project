@@ -194,83 +194,120 @@ def filter_cmd(ctx, threshold, model, batch_size, force):
 
 
 @main.command()
-@click.option("--task", "-t", type=click.Choice(["subjectivity", "polarity", "both"]), default="both", help="Which task to run.")
 @click.option("--model-type", "-m", type=click.Choice(["finetuned", "pretrained"]), default="finetuned", help="Use finetuned or pretrained model.")
 @click.option("--batch-size", default=32, help="Inference batch size.")
 @click.option("--force", is_flag=True, default=False, help="Re-classify all opinions.")
 @click.option("--platform", "-p", type=click.Choice(["all", "bluesky", "reddit"]), default="all", help="Filter by platform.")
 @click.pass_context
-def classify(ctx, task, model_type, batch_size, force, platform):
-    """Classify opinions for subjectivity and/or polarity using ML models."""
+def classify(ctx, model_type, batch_size, force, platform):
+    """Classify opinions for subjectivity and polarity.
+
+    Pipeline: subjectivity first, then polarity only for opinionated posts.
+    Neutral subjectivity → polarity automatically set to neutral.
+    Opinionated → polarity classified as positive or negative (no neutral).
+    """
     import torch
-    from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+    from transformers import pipeline as hf_pipeline
 
     store = OpinionStore(ctx.obj["db"])
     device = 0 if torch.cuda.is_available() else -1
-    tasks = ["subjectivity", "polarity"] if task == "both" else [task]
 
-    model_configs = {
-        "subjectivity": {
-            "finetuned": "models/subjectivity_detection/best_model",
-            "pretrained": "facebook/bart-large-mnli",
-            "labels": ["neutral", "opinionated"],
-        },
-        "polarity": {
-            "finetuned": "models/polarity_detection/best_model",
-            "pretrained": "cardiffnlp/twitter-roberta-base-sentiment-latest",
-            "labels": ["positive", "neutral", "negative"],
-        },
-    }
+    subjectivity_model = {
+        "finetuned": "models/subjectivity_detection/best_model",
+        "pretrained": "facebook/bart-large-mnli",
+    }[model_type]
 
-    for t in tasks:
-        config = model_configs[t]
-        model_path = config[model_type]
+    polarity_model = {
+        "finetuned": "models/polarity_detection/best_model",
+        "pretrained": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    }[model_type]
 
-        if force:
-            store.reset_classification(t)
+    if force:
+        store.reset_classification("subjectivity")
+        store.reset_classification("polarity")
 
-        unclassified = store.get_unclassified(t)
-        if platform != "all":
-            unclassified = [o for o in unclassified if o.platform == platform]
+    # ── Step 1: Subjectivity classification ──────────────────────────
+    unclassified = store.get_unclassified("subjectivity")
+    if platform != "all":
+        unclassified = [o for o in unclassified if o.platform == platform]
 
-        if not unclassified:
-            click.echo(f"[{t}] No unclassified opinions found.")
-            continue
+    if unclassified:
+        click.echo(f"[subjectivity] Loading model: {subjectivity_model}")
+        click.echo(f"[subjectivity] Classifying {len(unclassified)} opinions...")
 
-        click.echo(f"[{t}] Loading model: {model_path}")
-        click.echo(f"[{t}] Classifying {len(unclassified)} opinions...")
-
-        if model_type == "pretrained" and t == "subjectivity":
-            # Zero-shot classification for subjectivity
-            classifier = pipeline("zero-shot-classification", model=model_path, device=device, batch_size=batch_size)
-            with click.progressbar(range(0, len(unclassified), batch_size), label=f"  [{t}]") as bar:
+        if model_type == "pretrained":
+            classifier = hf_pipeline("zero-shot-classification", model=subjectivity_model, device=device, batch_size=batch_size)
+            labels = ["neutral", "opinionated"]
+            with click.progressbar(range(0, len(unclassified), batch_size), label="  [subjectivity]") as bar:
                 for i in bar:
                     batch = unclassified[i:i + batch_size]
                     texts = [o.cleaned_text or o.text for o in batch]
-                    results = classifier(texts, candidate_labels=config["labels"], batch_size=batch_size)
+                    results = classifier(texts, candidate_labels=labels, batch_size=batch_size)
                     if isinstance(results, dict):
                         results = [results]
                     updates = [(o.post_id, r["labels"][0]) for o, r in zip(batch, results)]
-                    store.update_classification_batch(updates, t)
+                    store.update_classification_batch(updates, "subjectivity")
         else:
-            # Direct classification (finetuned models or pretrained sentiment)
-            classifier = pipeline("text-classification", model=model_path, device=device, batch_size=batch_size, truncation=True, max_length=512)
-            with click.progressbar(range(0, len(unclassified), batch_size), label=f"  [{t}]") as bar:
+            classifier = hf_pipeline("text-classification", model=subjectivity_model, device=device, batch_size=batch_size, truncation=True, max_length=512)
+            with click.progressbar(range(0, len(unclassified), batch_size), label="  [subjectivity]") as bar:
                 for i in bar:
                     batch = unclassified[i:i + batch_size]
                     texts = [o.cleaned_text or o.text for o in batch]
                     results = classifier(texts, batch_size=batch_size)
                     updates = [(o.post_id, r["label"].lower()) for o, r in zip(batch, results)]
-                    store.update_classification_batch(updates, t)
+                    store.update_classification_batch(updates, "subjectivity")
+    else:
+        click.echo("[subjectivity] No unclassified opinions found.")
 
-        # Summary
-        all_opinions = store.get_all()
-        if platform != "all":
-            all_opinions = [o for o in all_opinions if o.platform == platform]
-        col_val = [getattr(o, f"{t}_label") for o in all_opinions]
-        from collections import Counter
-        dist = Counter(v for v in col_val if v is not None)
-        click.echo(f"\n[{t}] Results: {dict(dist)}")
+    # ── Step 2: Set neutral polarity for neutral subjectivity ────────
+    all_opinions = store.get_all()
+    if platform != "all":
+        all_opinions = [o for o in all_opinions if o.platform == platform]
+
+    neutral_no_polarity = [o for o in all_opinions if o.subjectivity_label == "neutral" and o.polarity_label is None]
+    if neutral_no_polarity:
+        updates = [(o.post_id, "neutral") for o in neutral_no_polarity]
+        store.update_classification_batch(updates, "polarity")
+        click.echo(f"[polarity] Set {len(neutral_no_polarity)} neutral-subjectivity posts to neutral polarity.")
+
+    # ── Step 3: Polarity classification for opinionated posts only ───
+    opinionated_unclassified = [o for o in all_opinions if o.subjectivity_label == "opinionated" and o.polarity_label is None]
+
+    if opinionated_unclassified:
+        click.echo(f"[polarity] Loading model: {polarity_model}")
+        click.echo(f"[polarity] Classifying {len(opinionated_unclassified)} opinionated opinions (positive/negative only)...")
+
+        if model_type == "pretrained":
+            classifier = hf_pipeline("text-classification", model=polarity_model, device=device, batch_size=batch_size, truncation=True, max_length=512, top_k=None)
+        else:
+            classifier = hf_pipeline("text-classification", model=polarity_model, device=device, batch_size=batch_size, truncation=True, max_length=512, top_k=None)
+
+        with click.progressbar(range(0, len(opinionated_unclassified), batch_size), label="  [polarity]") as bar:
+            for i in bar:
+                batch = opinionated_unclassified[i:i + batch_size]
+                texts = [o.cleaned_text or o.text for o in batch]
+                results = classifier(texts, batch_size=batch_size)
+                updates = []
+                for o, scores in zip(batch, results):
+                    # Pick highest scoring between positive and negative only
+                    score_map = {r["label"].lower(): r["score"] for r in scores}
+                    pos_score = score_map.get("positive", 0)
+                    neg_score = score_map.get("negative", 0)
+                    label = "positive" if pos_score >= neg_score else "negative"
+                    updates.append((o.post_id, label))
+                store.update_classification_batch(updates, "polarity")
+    else:
+        click.echo("[polarity] No opinionated opinions to classify.")
+
+    # ── Summary ──────────────────────────────────────────────────────
+    from collections import Counter
+    all_opinions = store.get_all()
+    if platform != "all":
+        all_opinions = [o for o in all_opinions if o.platform == platform]
+    sub_dist = Counter(o.subjectivity_label for o in all_opinions if o.subjectivity_label)
+    pol_dist = Counter(o.polarity_label for o in all_opinions if o.polarity_label)
+    click.echo(f"\n[subjectivity] Results: {dict(sub_dist)}")
+    click.echo(f"[polarity] Results: {dict(pol_dist)}")
 
 
 @main.command()

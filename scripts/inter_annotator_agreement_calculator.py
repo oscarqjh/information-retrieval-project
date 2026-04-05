@@ -58,7 +58,7 @@ print("-" * 55)
 
 for task in tasks:
     kappa_val, sample_n = calculate_kappa_statsmodels(merged, task, suffixes)
-    print(f"{task:<25} | {kappa_val:<12.4f} | {sample_n}")
+    print(f"{task:<25} | {kappa_val:<12.4f}")
 
 # Interpretation Guidelines
 print("\nInterpretation Reference:")

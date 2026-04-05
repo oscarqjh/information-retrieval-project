@@ -9,3 +9,4 @@ build/
 .env
 .python-version
 .worktrees/
+artifacts/

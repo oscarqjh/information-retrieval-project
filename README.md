@@ -263,14 +263,3 @@ report / export
 ```bash
 uv run pytest tests/ -v
 ```
-
-## Classification Artifacts
-
-The repository contains example experiment outputs under `artifacts/` and end-to-end annotation metrics next to `data/all_opinions.csv`.
-
-- `artifacts/ablation/baseline_hierarchical_finetuned/` — current hierarchical subjectivity/polarity models used for downstream inference
-- `artifacts/ablation/` — shared-split ablation study outputs
-- `data/all_opinions.csv.hierarchical.metrics.json` — hierarchical annotation throughput
-- `data/all_opinions.csv.sarcasm.metrics.json` — sarcasm annotation throughput
-
-For a report-ready discussion of the implemented classifiers, evaluation, and ablation study, see [`CLASSIFICATION_EXPERIMENT_REPORT.md`](CLASSIFICATION_EXPERIMENT_REPORT.md).

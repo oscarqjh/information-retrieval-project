@@ -1,28 +1,33 @@
-# Opinion Scraper
+# Group 26 -- AI Opinion Search Engine
 
-Scrape Bluesky for public opinions on AI tools, then filter, classify, analyze, and export results.
+A web-based opinion search engine that scrapes, classifies, indexes, and searches public opinions about Artificial Intelligence from Bluesky and Reddit.
 
-## Features
+## Pipeline Overview
 
-- **Bluesky scraping** — via AT Protocol SDK with 40 curated preset queries
-- **Threaded reply scraping** — fetch reply threads with configurable depth
-- **Two-layer relevance filtering**
-  - Rule-based (inline during scrape): min text length, language check, URL/hashtag density, keyword blocklist, near-duplicate detection
-  - ML-powered (post-scrape): zero-shot classification using HuggingFace transformers on GPU
-- **Hierarchical opinion classification**
-  - Stage 1: `neutral` vs `opinionated`
-  - Stage 2: `negative` vs `positive` for stage-1 opinionated posts only
-  - Fine-tuning and ablation tooling for the manually labeled dataset
-- **Dedicated sarcasm detection** — separate classifier and evaluation pipeline for an imbalanced sarcasm task
-- **Text cleaning** — NLP preprocessing pipeline (HTML removal, contraction expansion, emoji conversion, stop word removal, lemmatization, bot detection)
-- **Sentiment analysis** — VADER-based positive/negative/neutral scoring
-- **Deduplication** — `post_id` primary key prevents duplicate entries across runs
-- **Export** — CSV and JSON output with optional filtering by sentiment and relevance
+```
+1. Scrape          Collect posts from Bluesky (AT Protocol) and Reddit
+       |
+2. Clean           NLP preprocessing (HTML, contractions, emoji, lemmatization)
+       |
+3. Filter          Rule-based + ML zero-shot relevance classification
+       |
+4. Analyze         VADER sentiment scoring
+       |
+5. Export           CSV/JSON output with optional filters
+       |
+6. Classify        Train & run hierarchical subjectivity/polarity + sarcasm detection
+       |
+7. Index           Index classified data into Apache Solr
+       |
+8. Search          Flask web app for querying opinions
+```
 
 ## Requirements
 
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Apache Solr 9.10.1
+- Java 17+ (required by Solr)
 
 ## Setup
 
@@ -43,38 +48,127 @@ cp .env.example .env  # fill in your Bluesky credentials
 | `BSKY_HANDLE` | Your Bluesky handle (e.g. `user.bsky.social`) |
 | `BSKY_PASSWORD` | Bluesky app password |
 
-## Usage
+---
 
-### Reproducing the Bluesky AI Opinions Experiment
+## Step 1 -- Scrape
+
+### Bluesky
+
+Scrape posts using 40 curated preset queries via the AT Protocol SDK:
 
 ```bash
-# 1. Scrape Bluesky using preset queries with reply threads
+# Scrape using preset queries with reply threads
 uv run opinion-scraper preset --with-replies
 
-# 2. Clean — NLP text preprocessing (HTML, contractions, stopwords, lemmatization)
+# Or scrape specific queries
+uv run opinion-scraper scrape -q "ChatGPT" -q "Claude AI" -n 100 --with-replies
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-q, --query` | `"AI tools"` | Search query (repeatable) |
+| `-n, --max-results` | `100` | Max results per query |
+| `--with-replies` | `False` | Also scrape reply threads |
+| `--min-replies` | `0` | Min reply count to fetch thread |
+| `--reply-depth` | `6` | Max reply depth |
+
+### Reddit
+
+Scrape Reddit comments from AI-related subreddits using the standalone crawler script:
+
+```bash
+python scripts/reddit_upvoted_comments_crawler.py
+```
+
+**Configuration:**
+
+- To change which subreddits to scrape from, modify the `SUBREDDITS` list at the top of the script
+- To change the sort filter (e.g. best, new), modify `sort_type` at the last line of the script
+
+**Additional dependencies** (if not already installed): `beautifulsoup4`, `requests`, `openpyxl`
+
+---
+
+## Step 2 -- Clean
+
+Run the NLP text preprocessing pipeline: HTML stripping, contraction expansion, emoji conversion, lowercasing, URL/number removal, stop word removal, and lemmatization. Rejects bot posts and entries too short after cleaning.
+
+```bash
 uv run opinion-scraper clean
+```
 
-# 3. Filter — ML relevance classification (zero-shot on GPU)
+---
+
+## Step 3 -- Filter
+
+Run ML relevance classification on unfiltered opinions. Uses `cleaned_text` when available.
+
+```bash
 uv run opinion-scraper filter
+```
 
-# 4. Analyze — VADER sentiment scoring
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--threshold` | `0.5` | Minimum confidence to accept classification |
+| `--model` | `MoritzLaurer/deberta-v3-large-zeroshot-v2.0` | HuggingFace model |
+| `--batch-size` | `64` | Inference batch size |
+
+---
+
+## Step 4 -- Analyze
+
+Run VADER sentiment analysis on unanalyzed opinions:
+
+```bash
 uv run opinion-scraper analyze
+```
 
-# 5. Report — view results (relevant posts only)
-uv run opinion-scraper report --relevant-only
+---
 
-# 6. Export — relevant opinions to CSV
+## Step 5 -- Export
+
+Export the cleaned and filtered data to CSV for classifier training and downstream use:
+
+```bash
+# Export relevant opinions to CSV
 uv run opinion-scraper export -f csv -o opinions.csv --relevant-only --clean-text-only
+
+# Export with filters
+uv run opinion-scraper export -f csv -o opinions.csv --relevant-only --exclude-rejected -p reddit
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-f, --format` | (required) | `csv` or `json` |
+| `-o, --output` | (required) | Output file path |
+| `-s, --sentiment` | `all` | Filter: `all`, `positive`, `negative`, `neutral` |
+| `-p, --platform` | `all` | Filter: `all`, `bluesky`, `reddit` |
+| `--relevant-only` | `False` | Exclude spam/off-topic posts |
+| `--exclude-rejected` | `False` | Exclude rejected posts |
+| `--clean-text-only` | `False` | Use cleaned text in the `text` column |
+
+---
+
+## Step 6 -- Classify
+
+Classifiers are trained on the exported cleaned data, then applied to annotate the full dataset.
+
+### Hierarchical opinion classification
+
+Uses finetuned RoBERTa-base models:
+
+- **Stage 1:** `neutral` vs `opinionated` (subjectivity detection)
+- **Stage 2:** `positive` vs `negative` for opinionated posts only; neutral subjectivity automatically receives neutral polarity
+
+```bash
+uv run opinion-scraper classify --model-type finetuned
 ```
 
 ### Training and Evaluating the Classifiers
 
-The project now includes a classification package under `src/opinion_scraper/classification/` with three main workflows:
+The classification package under `src/opinion_scraper/classification/` supports three workflows:
 
-- ablation experiments for the classification design
-- a separate sarcasm detector and CSV annotation pipeline
-
-#### Run the ablation study
+#### Ablation study
 
 ```bash
 uv run opinion-scraper run-hierarchical-ablation \
@@ -82,20 +176,20 @@ uv run opinion-scraper run-hierarchical-ablation \
   --base-model MoritzLaurer/deberta-v3-large-zeroshot-v2.0
 ```
 
-The ablation runner compares:
+Compares:
 
-- `baseline_hierarchical_finetuned` — hierarchical design + fine-tuning
-- `ablation_no_finetuning` — hierarchical zero-shot NLI without fine-tuning
-- `ablation_no_hierarchy` — single flat 3-class classifier
+- `baseline_hierarchical_finetuned` -- hierarchical design + fine-tuning
+- `ablation_no_finetuning` -- hierarchical zero-shot NLI without fine-tuning
+- `ablation_no_hierarchy` -- single flat 3-class classifier
 
-#### Evaluate the zero-shot sarcasm detector on the manual labels
+#### Sarcasm evaluation
 
 ```bash
 uv run opinion-scraper evaluate-sarcasm-classifier \
   --model MoritzLaurer/deberta-v3-large-zeroshot-v2.0
 ```
 
-#### Annotate the full CSV in place
+#### Annotate the full CSV
 
 Hierarchical subjectivity/polarity:
 
@@ -116,92 +210,79 @@ uv run opinion-scraper annotate-sarcasm \
   --force
 ```
 
-Both annotation commands default to GPU (`--device 0`) and write run metrics to:
+Both annotation commands default to GPU (`--device 0`) and write metrics to `data/all_opinions.csv.*.metrics.json`.
 
-- `data/all_opinions.csv.hierarchical.metrics.json`
-- `data/all_opinions.csv.sarcasm.metrics.json`
+---
 
-### Custom Queries
+## Step 7 -- Index into Solr
+
+### Install and start Solr
 
 ```bash
-# Scrape specific queries
-uv run opinion-scraper scrape -q "ChatGPT" -q "Claude AI" -n 100 --with-replies
+# Download Solr 9.10.1 from https://solr.apache.org/downloads.html
+tar -xzf solr-9.10.1.tgz
+cd solr-9.10.1
 
-# Run the rest of the pipeline
-uv run opinion-scraper clean
-uv run opinion-scraper filter
-uv run opinion-scraper analyze
-uv run opinion-scraper export -f csv -o opinions.csv --relevant-only
+# Start Solr and create the core
+bin/solr start
+bin/solr create -c opinions
 ```
 
-### CLI Reference
+### Set up the Solr schema
 
-#### `scrape`
+```bash
+# Add all required fields
+for field in \
+  '{"add-field": {"name":"text","type":"text_en","stored":true}}' \
+  '{"add-field": {"name":"cleaned_text","type":"text_en","stored":true}}' \
+  '{"add-field": {"name":"author","type":"string","stored":true}}' \
+  '{"add-field": {"name":"platform","type":"string","stored":true}}' \
+  '{"add-field": {"name":"sentiment_label","type":"string","stored":true}}' \
+  '{"add-field": {"name":"sentiment_score","type":"pfloat","stored":true}}' \
+  '{"add-field": {"name":"likes","type":"pint","stored":true}}' \
+  '{"add-field": {"name":"reposts","type":"pint","stored":true}}' \
+  '{"add-field": {"name":"created_at","type":"string","stored":true}}' \
+  '{"add-field": {"name":"query","type":"string","stored":true}}' \
+  '{"add-field": {"name":"subjectivity_label","type":"string","stored":true}}' \
+  '{"add-field": {"name":"polarity_label","type":"string","stored":true}}'; do
+  curl -X POST -H 'Content-type:application/json' \
+    'http://localhost:8983/solr/opinions/schema' -d "$field"
+done
+```
 
-Scrape opinions from Bluesky.
+### Index the data
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-q, --query` | `"AI tools"` | Search query (repeatable) |
-| `-n, --max-results` | `100` | Max results per query |
-| `--with-replies` | `False` | Also scrape reply threads |
-| `--min-replies` | `0` | Min reply count to fetch thread |
-| `--reply-depth` | `6` | Max reply depth |
+Make sure `opinions.csv` is in the `indexing/` folder, then run:
 
-#### `clean`
+```bash
+cd indexing
+python3 index_to_solr.py
+```
 
-Clean and preprocess opinion text using an NLP pipeline: HTML stripping, contraction expansion, emoji conversion, lowercasing, URL/number removal, stop word removal, and lemmatization. Rejects bot posts and entries too short after cleaning.
+---
 
-#### `filter`
+## Step 8 -- Run the Search Engine
 
-Run ML relevance classification on unfiltered opinions. Uses `cleaned_text` when available.
+```bash
+cd indexing
+python3 app.py
+```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--threshold` | `0.5` | Minimum confidence to accept classification |
-| `--model` | `MoritzLaurer/deberta-v3-large-zeroshot-v2.0` | HuggingFace model |
-| `--batch-size` | `64` | Inference batch size |
+Open your browser at `http://0.0.0.0:5000`.
 
-#### `analyze`
+### Search Features
 
-Run VADER sentiment analysis on unanalyzed opinions.
+- **Keyword search** -- Search any AI-related term (e.g. ChatGPT, machine learning)
+- **Timeline search** -- Filter results by date range
+- **Sentiment filter** -- Filter by Positive, Neutral, or Negative sentiment
+- **Sort options** -- Sort by Most Relevant, Newest, Oldest, Most Liked, or Most Reposted
+- **Sentiment pie chart** -- Real-time sentiment breakdown for every query
+- **Pagination** -- Navigate through results page by page
+- **Query speed** -- Displays response time in milliseconds
 
-#### `report`
+> **Note:** Solr must be running before starting the Flask app. Every time you restart your machine, run `bin/solr start` before `python3 app.py`.
 
-Display sentiment analysis report.
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--relevant-only` | `False` | Exclude spam/off-topic posts |
-
-#### `export`
-
-Export opinions to CSV or JSON.
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-f, --format` | (required) | `csv` or `json` |
-| `-o, --output` | (required) | Output file path |
-| `-s, --sentiment` | `all` | Filter: `all`, `positive`, `negative`, `neutral` |
-| `-p, --platform` | `all` | Filter: `all`, `bluesky` |
-| `--relevant-only` | `False` | Exclude spam/off-topic posts |
-| `--clean-text-only` | `False` | Use cleaned text in the `text` column, drop `cleaned_text`/`clean_status` columns |
-
-#### `preset`
-
-Scrape using curated AI opinion queries (40 queries).
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--with-replies` | `False` | Also scrape reply threads |
-| `--min-replies` | `0` | Min reply count to fetch thread |
-| `--reply-depth` | `6` | Max reply depth |
-
-### Global Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--db` | `opinions.db` | Path to SQLite database |
+---
 
 ## Project Structure
 
@@ -220,42 +301,19 @@ src/opinion_scraper/
     base.py           # Abstract base scraper
     bluesky.py        # Bluesky scraper (AT Protocol)
 
-tests/                # 80 tests covering scraping, filtering, classification, and export
-```
+scripts/
+  reddit_upvoted_comments_crawler.py   # Reddit comment scraper
+  inter_annotator_agreement_calculator.py
+  evaluate_pretrained.py               # Pretrained model evaluation
+  finetune_models.py                   # Model finetuning
 
-## Pipeline Architecture
+indexing/
+  app.py              # Flask backend
+  index_to_solr.py    # Solr indexing script
+  templates/
+    index.html        # Frontend UI
 
-```
-scrape (--with-replies)
-  ├── Fetch posts from Bluesky search API
-  ├── Rule-based filter (Layer 1) — drops spam inline
-  ├── Store surviving posts to SQLite
-  ├── [if --with-replies] Fetch reply threads
-  ├── Rule-based filter on replies
-  └── Store replies (is_reply=True, parent_post_id set)
-         │
-         v
-clean
-  ├── Strip HTML, expand contractions, convert emojis
-  ├── Lowercase, remove URLs/numbers/punctuation
-  ├── Tokenize, remove stop words, lemmatize
-  ├── Reject bot posts and too-short entries
-  └── Store cleaned_text + clean_status to DB
-         │
-         v
-filter
-  ├── Load opinions where relevance_label IS NULL
-  ├── Zero-shot classification on GPU (uses cleaned_text)
-  └── Write relevance_score + relevance_label to DB
-         │
-         v
-analyze
-  └── VADER sentiment scoring (uses original text)
-         │
-         v
-report / export
-  ├── --relevant-only: exclude spam/off_topic
-  └── --sentiment: filter by sentiment label
+tests/                # Tests covering scraping, filtering, classification, and export
 ```
 
 ## Testing
@@ -264,13 +322,8 @@ report / export
 uv run pytest tests/ -v
 ```
 
-## Classification Artifacts
+## Global CLI Options
 
-The repository contains example experiment outputs under `artifacts/` and end-to-end annotation metrics next to `data/all_opinions.csv`.
-
-- `artifacts/ablation/baseline_hierarchical_finetuned/` — current hierarchical subjectivity/polarity models used for downstream inference
-- `artifacts/ablation/` — shared-split ablation study outputs
-- `data/all_opinions.csv.hierarchical.metrics.json` — hierarchical annotation throughput
-- `data/all_opinions.csv.sarcasm.metrics.json` — sarcasm annotation throughput
-
-For a report-ready discussion of the implemented classifiers, evaluation, and ablation study, see [`CLASSIFICATION_EXPERIMENT_REPORT.md`](CLASSIFICATION_EXPERIMENT_REPORT.md).
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--db` | `opinions.db` | Path to SQLite database |
